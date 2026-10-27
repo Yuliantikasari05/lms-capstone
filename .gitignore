@@ -1,0 +1,24 @@
+# Sistem & editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Environment & rahasia
+.env
+.env.*
+!.env.example
+
+# Dependency
+node_modules/
+backend/vendor/
+
+# Cache, log, build
+*.log
+frontend/dist/
+backend/public/build/
+backend/public/hot
+backend/public/storage
+backend/.phpunit.cache/
+backend/.phpunit.result.cache
+backend/storage/*.key
