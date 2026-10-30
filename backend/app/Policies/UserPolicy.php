@@ -31,4 +31,15 @@ class UserPolicy
         // Tidak boleh menghapus akun sendiri.
         return $actor->hasPermission('users.delete') && ! $actor->is($target);
     }
+
+    /** Memulihkan akun yang dihapus memakai permission yang sama dengan menghapus. */
+    public function restore(User $actor, User $target): bool
+    {
+        return $actor->hasPermission('users.delete');
+    }
+
+    public function export(User $actor): bool
+    {
+        return $actor->hasPermission('users.export');
+    }
 }

@@ -37,7 +37,7 @@ class UpdateUserRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.unique' => 'Email sudah terdaftar.',
+            'email.unique' => 'Email sudah terdaftar (termasuk akun yang sudah dihapus; pulihkan dari tab Dihapus).',
             'email.email' => 'Format email tidak valid.',
             'role.exists' => 'Role tidak dikenal.',
             'status.in' => 'Status tidak valid.',

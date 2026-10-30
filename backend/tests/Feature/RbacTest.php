@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -29,14 +30,22 @@ class RbacTest extends TestCase
 
     public function test_least_privilege_only_admin_manages_users(): void
     {
+        // Non-admin boleh punya permission lain seiring modul bertambah, tetapi TIDAK boleh
+        // punya hak kelola pengguna/role. (Sengaja bukan perbandingan persis agar tidak
+        // patah setiap kali anggota tim menambah permission baru.)
         foreach ([Role::MENTOR, Role::SISWA, Role::KARYAWAN, Role::LEMBAGA] as $slug) {
-            $permissions = Role::where('slug', $slug)->firstOrFail()->permissions->pluck('slug')->all();
+            $permissions = Role::where('slug', $slug)->firstOrFail()->permissions->pluck('slug');
 
-            $this->assertSame(["dashboard.{$slug}"], $permissions, "Role {$slug} mendapat permission berlebih.");
+            $this->assertTrue($permissions->contains("dashboard.{$slug}"), "Role {$slug} harus punya dashboard.{$slug}.");
+
+            $terlarang = $permissions->filter(fn (string $p) => str_starts_with($p, 'users.') || str_starts_with($p, 'roles.'));
+            $this->assertTrue($terlarang->isEmpty(), "Role {$slug} mendapat permission kelola berlebih: ".$terlarang->implode(', '));
         }
 
         $adminPermissions = Role::where('slug', Role::ADMIN)->firstOrFail()->permissions->pluck('slug');
-        $this->assertTrue($adminPermissions->contains('users.delete'));
+        foreach (['users.view', 'users.create', 'users.update', 'users.delete', 'users.export'] as $permission) {
+            $this->assertTrue($adminPermissions->contains($permission), "Admin harus punya {$permission}.");
+        }
     }
 
     public function test_seeder_is_idempotent(): void
@@ -44,7 +53,8 @@ class RbacTest extends TestCase
         $this->seedRbac();
 
         $this->assertSame(5, Role::count());
-        $this->assertSame(10, Permission::count());
+        // Dihitung dari daftar di seeder, bukan angka tetap, agar tidak patah saat permission bertambah.
+        $this->assertSame(count(RolePermissionSeeder::PERMISSIONS), Permission::count());
     }
 
     public function test_guest_cannot_list_users(): void
@@ -135,7 +145,7 @@ class RbacTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_admin_cannot_delete_own_account_but_can_delete_others(): void
+    public function test_admin_cannot_delete_own_account_but_can_soft_delete_others(): void
     {
         $admin = $this->userWithRole(Role::ADMIN);
         $other = $this->userWithRole(Role::SISWA);
@@ -143,8 +153,9 @@ class RbacTest extends TestCase
         $this->actingAs($admin, 'web')->deleteJson('/api/v1/users/'.$admin->id)->assertForbidden();
         $this->actingAs($admin, 'web')->deleteJson('/api/v1/users/'.$other->id)->assertOk();
 
-        $this->assertModelMissing($other);
-        $this->assertModelExists($admin);
+        // Soft delete: baris tetap ada di database, hanya diberi tanda deleted_at.
+        $this->assertSoftDeleted($other);
+        $this->assertNotSoftDeleted($admin);
     }
 
     public function test_admin_summary_contains_real_counts_and_null_courses(): void

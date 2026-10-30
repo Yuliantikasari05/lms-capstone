@@ -33,6 +33,7 @@ class AdminSummaryController extends Controller
         return response()->json(['data' => [
             'users_total' => User::count(),
             'users_active' => User::where('status', User::STATUS_ACTIVE)->count(),
+            'users_trashed' => User::onlyTrashed()->count(),
             'mentors_total' => $byRole->firstWhere('slug', Role::MENTOR)['users_count'] ?? 0,
             // Modul kursus belum ada pada tahap ini.
             'courses_total' => null,

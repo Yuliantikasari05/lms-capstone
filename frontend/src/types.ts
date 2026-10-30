@@ -16,6 +16,8 @@ export interface User {
   permissions: string[]
   last_login_at: string | null
   created_at: string | null
+  /** Terisi bila akun sudah dihapus (soft delete). */
+  deleted_at: string | null
 }
 
 export interface PaginationMeta {
@@ -33,6 +35,7 @@ export interface Paginated<T> {
 export interface AdminSummary {
   users_total: number
   users_active: number
+  users_trashed: number
   mentors_total: number
   courses_total: number | null
   users_by_role: { slug: string; name: string; users_count: number }[]
@@ -43,4 +46,10 @@ export interface AdminSummary {
     role: string | null
     last_login_at: string
   }[]
+}
+
+/** Bentuk response mutasi (tambah/ubah/pulihkan): data + pesan dari backend. */
+export interface ApiMessage<T> {
+  data: T
+  message?: string
 }

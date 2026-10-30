@@ -24,6 +24,8 @@ class UserResource extends JsonResource
             'permissions' => $this->when($permissionsLoaded, fn () => $this->permissionSlugs()),
             'last_login_at' => $this->last_login_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
+            // Terisi bila akun sudah dihapus (soft delete); null untuk akun biasa.
+            'deleted_at' => $this->deleted_at?->toIso8601String(),
         ];
     }
 }

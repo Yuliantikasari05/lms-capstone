@@ -38,7 +38,7 @@ class StoreUserRequest extends FormRequest
             'name.required' => 'Nama wajib diisi.',
             'email.required' => 'Email wajib diisi.',
             'email.email' => 'Format email tidak valid.',
-            'email.unique' => 'Email sudah terdaftar.',
+            'email.unique' => 'Email sudah terdaftar (termasuk akun yang sudah dihapus; pulihkan dari tab Dihapus).',
             'password.required' => 'Kata sandi wajib diisi.',
             'role.required' => 'Role wajib dipilih.',
             'role.exists' => 'Role tidak dikenal.',
