@@ -46,11 +46,16 @@ class CreateAdminCommand extends Command
             return self::FAILURE;
         }
 
-        $admin = User::updateOrCreate(
-            ['email' => $email],
-            ['name' => $name, 'password' => $password, 'status' => User::STATUS_ACTIVE]
-        );
-        $admin->roles()->syncWithoutDetaching([$adminRole->id]);
+        // withTrashed: email milik akun yang sudah dihapus tetap ditemukan (bukan membuat duplikat).
+        $admin = User::withTrashed()->firstOrNew(['email' => $email]);
+        $admin->fill(['name' => $name, 'password' => $password, 'status' => User::STATUS_ACTIVE])->save();
+
+        if ($admin->trashed()) {
+            $admin->restore();
+        }
+
+        // sync (bukan syncWithoutDetaching): setiap akun memiliki tepat satu role.
+        $admin->roles()->sync([$adminRole->id]);
 
         $this->info("Akun Admin siap digunakan: {$admin->email}");
 

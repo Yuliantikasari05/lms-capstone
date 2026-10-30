@@ -23,7 +23,11 @@ Route::prefix('v1')->group(function () {
             Route::get('admin/summary', AdminSummaryController::class)->middleware('permission:dashboard.admin');
 
             // Otorisasi per aksi ditangani oleh UserPolicy.
-            Route::apiResource('users', UserController::class);
+            // PENTING: rute statis `users/export` harus didaftarkan SEBELUM apiResource,
+            // jika tidak kata "export" akan dibaca sebagai {user}.
+            Route::get('users/export', [UserController::class, 'export'])->middleware('throttle:10,1');
+            Route::post('users/{user}/restore', [UserController::class, 'restore'])->withTrashed();
+            Route::apiResource('users', UserController::class)->withTrashed(['show']);
         });
     });
 });

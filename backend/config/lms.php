@@ -7,4 +7,7 @@ return [
         'email' => env('ADMIN_EMAIL'),
         'password' => env('ADMIN_PASSWORD'),
     ],
+
+    // Dibaca hanya oleh DemoUserSeeder (khusus lingkungan local). Kosong = dibuat acak lalu ditampilkan sekali.
+    'demo_password' => env('DEMO_USER_PASSWORD'),
 ];

@@ -5,19 +5,28 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, SoftDeletes;
 
     public const STATUS_ACTIVE = 'active';
     public const STATUS_INACTIVE = 'inactive';
     public const STATUS_SUSPENDED = 'suspended';
 
     public const STATUSES = [self::STATUS_ACTIVE, self::STATUS_INACTIVE, self::STATUS_SUSPENDED];
+
+    /** Label status untuk tampilan/ekspor. Samakan dengan STATUS_LABEL di frontend (lib/format.ts). */
+    public const STATUS_LABELS = [
+        self::STATUS_ACTIVE => 'Aktif',
+        self::STATUS_INACTIVE => 'Nonaktif',
+        self::STATUS_SUSPENDED => 'Ditangguhkan',
+    ];
 
     protected $fillable = ['name', 'email', 'password', 'status'];
 
@@ -40,6 +49,17 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
+    }
+
+    public function statusLabel(): string
+    {
+        return self::STATUS_LABELS[$this->status] ?? $this->status;
+    }
+
+    /** Mengeluarkan pengguna dari semua perangkat (SESSION_DRIVER=database). */
+    public function revokeSessions(): void
+    {
+        DB::table(config('session.table', 'sessions'))->where('user_id', $this->getKey())->delete();
     }
 
     /** @param string|array<int,string> $roles */

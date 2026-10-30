@@ -29,16 +29,19 @@ class AdminSeeder extends Seeder
             return;
         }
 
-        $admin = User::updateOrCreate(
-            ['email' => mb_strtolower(trim((string) $email))],
-            [
-                'name' => config('lms.admin.name') ?: 'Administrator',
-                'password' => $password,
-                'status' => User::STATUS_ACTIVE,
-            ]
-        );
+        $admin = User::withTrashed()->firstOrNew(['email' => mb_strtolower(trim((string) $email))]);
+        $admin->fill([
+            'name' => config('lms.admin.name') ?: 'Administrator',
+            'password' => $password,
+            'status' => User::STATUS_ACTIVE,
+        ])->save();
 
-        $admin->roles()->syncWithoutDetaching([Role::where('slug', Role::ADMIN)->firstOrFail()->id]);
+        if ($admin->trashed()) {
+            $admin->restore();
+        }
+
+        // sync: setiap akun memiliki tepat satu role.
+        $admin->roles()->sync([Role::where('slug', Role::ADMIN)->firstOrFail()->id]);
 
         $this->command?->info("Akun Admin siap: {$admin->email}");
     }

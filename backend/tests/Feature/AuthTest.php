@@ -20,15 +20,19 @@ class AuthTest extends TestCase
     {
         $user = $this->userWithRole(Role::MENTOR, ['email' => 'mentor@example.test']);
 
-        $this->asSpa()->postJson('/api/v1/auth/login', [
+        $response = $this->asSpa()->postJson('/api/v1/auth/login', [
             'email' => 'mentor@example.test',
             'password' => 'password-rahasia-123',
         ])
             ->assertOk()
             ->assertJsonPath('data.email', 'mentor@example.test')
             ->assertJsonPath('data.primary_role', 'mentor')
-            ->assertJsonPath('data.permissions', ['dashboard.mentor'])
             ->assertJsonMissingPath('data.password');
+
+        // Bukan perbandingan persis: Mentor akan mendapat permission lain seiring modul bertambah.
+        $permissions = $response->json('data.permissions');
+        $this->assertContains('dashboard.mentor', $permissions);
+        $this->assertNotContains('users.view', $permissions);
 
         $this->assertAuthenticatedAs($user, 'web');
         $this->assertNotNull($user->fresh()->last_login_at);

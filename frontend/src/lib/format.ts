@@ -5,6 +5,13 @@ export function formatDateTime(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(date)
+}
+
 export function initials(name: string): string {
   return (
     name
