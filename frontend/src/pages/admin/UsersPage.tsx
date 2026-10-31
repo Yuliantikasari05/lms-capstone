@@ -1,4 +1,4 @@
-import { Download, Eye, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
+import { Download, Eye, KeyRound, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { useAuth } from '../../auth/AuthContext'
 import { Badge } from '../../components/ui/Badge'
@@ -13,10 +13,11 @@ import { ROLE_CONFIG, ROLE_SLUGS } from '../../config/navigation'
 import { api, toApiError } from '../../lib/api'
 import { STATUS_LABEL, formatDate, formatDateTime, initials } from '../../lib/format'
 import { useApiData } from '../../lib/useApiData'
-import type { AdminSummary, ApiMessage, Paginated, Role, RoleSlug, User } from '../../types'
+import type { AdminSummary, ApiMessage, Paginated, ResetPasswordResponse, Role, RoleSlug, User } from '../../types'
 import { UserDetailModal } from './users/UserDetailModal'
+import { TemporaryPasswordModal } from './users/TemporaryPasswordModal'
 import { UserFormModal } from './users/UserFormModal'
-import { STATUS_OPTIONS, STATUS_TONE } from './users/shared'
+import { STATUS_OPTIONS, STATUS_TONE, type TemporaryPasswordInfo } from './users/shared'
 
 type Tab = 'all' | 'trashed' | RoleSlug
 
@@ -26,6 +27,7 @@ type Dialog =
   | { type: 'edit'; user: User }
   | { type: 'delete'; user: User }
   | { type: 'restore'; user: User }
+  | { type: 'reset'; user: User }
   | null
 
 const PER_PAGE = 15
@@ -60,6 +62,7 @@ export default function UsersPage() {
   const [dialogError, setDialogError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [temporary, setTemporary] = useState<TemporaryPasswordInfo | null>(null)
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   // Filter yang sama dipakai untuk daftar dan untuk ekspor CSV.
@@ -120,9 +123,10 @@ export default function UsersPage() {
     setDialogError(null)
   }
 
-  const afterChange = (text: string) => {
+  const afterChange = (text: string, temporaryPassword?: TemporaryPasswordInfo) => {
     closeDialog()
     setNotice({ tone: 'success', text })
+    if (temporaryPassword) setTemporary(temporaryPassword)
     list.reload()
     summary.reload()
   }
@@ -133,6 +137,19 @@ export default function UsersPage() {
     try {
       const res = await action()
       afterChange(res.data.message ?? 'Berhasil.')
+    } catch (error) {
+      setDialogError(toApiError(error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resetPassword = async (target: User) => {
+    setBusy(true)
+    setDialogError(null)
+    try {
+      const res = await api.post<ResetPasswordResponse>(`/users/${target.id}/reset-password`)
+      afterChange('Kata sandi sementara dibuat.', { name: target.name, email: target.email, password: res.data.temporary_password, reason: 'reset' })
     } catch (error) {
       setDialogError(toApiError(error).message)
     } finally {
@@ -287,11 +304,14 @@ export default function UsersPage() {
                         </td>
                         <td className="py-2.5">{row.roles.map((r) => r.name).join(', ') || '—'}</td>
                         <td className="py-2.5">
-                          {trashed ? (
-                            <Badge tone="danger">Dihapus</Badge>
-                          ) : (
-                            <Badge tone={STATUS_TONE[row.status]}>{STATUS_LABEL[row.status] ?? row.status}</Badge>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {trashed ? (
+                              <Badge tone="danger">Dihapus</Badge>
+                            ) : (
+                              <Badge tone={STATUS_TONE[row.status]}>{STATUS_LABEL[row.status] ?? row.status}</Badge>
+                            )}
+                            {!trashed && row.must_change_password && <Badge tone="warning">Kata sandi sementara</Badge>}
+                          </div>
                         </td>
                         <td className="py-2.5 text-slate-600">{formatDate(row.created_at)}</td>
                         <td className="py-2.5 text-slate-600">{formatDateTime(row.last_login_at)}</td>
@@ -309,6 +329,11 @@ export default function UsersPage() {
                                 <IconButton label={`Ubah ${row.name}`} onClick={() => setDialog({ type: 'edit', user: row })}>
                                   <Pencil className="h-4 w-4" aria-hidden />
                                 </IconButton>
+                                {!isSelf && (
+                                  <IconButton label={`Reset kata sandi ${row.name}`} onClick={() => setDialog({ type: 'reset', user: row })}>
+                                    <KeyRound className="h-4 w-4" aria-hidden />
+                                  </IconButton>
+                                )}
                                 <IconButton
                                   label={isSelf ? 'Tidak dapat menghapus akun sendiri' : `Hapus ${row.name}`}
                                   danger
@@ -390,6 +415,26 @@ export default function UsersPage() {
           )
         }
       />
+
+      <ConfirmDialog
+        open={dialog?.type === 'reset'}
+        title="Reset kata sandi?"
+        confirmLabel="Buat kata sandi sementara"
+        loading={busy}
+        error={dialogError}
+        onCancel={closeDialog}
+        onConfirm={() => dialog?.type === 'reset' && void resetPassword(dialog.user)}
+        message={
+          dialog?.type === 'reset' && (
+            <>
+              Kata sandi <strong>{dialog.user.name}</strong> akan diganti dengan kata sandi sementara. Pengguna dikeluarkan dari semua perangkat dan wajib membuat kata sandi baru saat login
+              berikutnya. Kata sandi sementara hanya ditampilkan sekali kepada Anda.
+            </>
+          )
+        }
+      />
+
+      {temporary && <TemporaryPasswordModal info={temporary} onClose={() => setTemporary(null)} />}
 
       <ConfirmDialog
         open={dialog?.type === 'restore'}

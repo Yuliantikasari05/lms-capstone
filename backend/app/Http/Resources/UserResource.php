@@ -22,6 +22,8 @@ class UserResource extends JsonResource
             'roles' => RoleResource::collection($this->whenLoaded('roles')),
             // Permission hanya disertakan bila sudah di-load (endpoint login & /auth/me).
             'permissions' => $this->when($permissionsLoaded, fn () => $this->permissionSlugs()),
+            // true = masih memakai kata sandi sementara dari Admin dan wajib menggantinya.
+            'must_change_password' => (bool) $this->must_change_password,
             'last_login_at' => $this->last_login_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             // Terisi bila akun sudah dihapus (soft delete); null untuk akun biasa.

@@ -1,11 +1,10 @@
-import { Check, Copy, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '../../../components/ui/Button'
 import { Field, inputClass } from '../../../components/ui/Field'
 import { Modal } from '../../../components/ui/Modal'
 import { api, toApiError } from '../../../lib/api'
-import type { ApiMessage, Role, User } from '../../../types'
-import { STATUS_OPTIONS, generatePassword } from './shared'
+import type { ApiMessage, CreatedUserResponse, Role, User } from '../../../types'
+import { STATUS_OPTIONS, type TemporaryPasswordInfo } from './shared'
 
 interface Props {
   mode: 'create' | 'edit'
@@ -18,12 +17,16 @@ interface Props {
   onRetryRoles?: () => void
   currentUserId?: number
   onClose: () => void
-  onSaved: (message: string) => void
+  /** Setelah tambah pengguna, `temporary` berisi kata sandi sementara yang harus ditampilkan sekali. */
+  onSaved: (message: string, temporary?: TemporaryPasswordInfo) => void
 }
 
 type FieldErrors = Record<string, string[]>
 
-/** Form tambah/ubah pengguna. Validasi akhir selalu dari backend (pesan 422 ditampilkan per kolom). */
+/**
+ * Form tambah/ubah pengguna. Admin TIDAK mengisi kata sandi: sistem membuat kata sandi sementara
+ * saat akun dibuat (lihat TemporaryPasswordModal) atau lewat aksi "Reset kata sandi".
+ */
 export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesError = false, onRetryRoles, currentUserId, onClose, onSaved }: Props) {
   const isEdit = mode === 'edit'
   const isSelf = isEdit && user?.id === currentUserId
@@ -32,30 +35,13 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
   const [email, setEmail] = useState(user?.email ?? '')
   const [role, setRole] = useState<string>(user?.primary_role ?? '')
   const [status, setStatus] = useState<string>(user?.status ?? 'active')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [general, setGeneral] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const firstError = (field: string) => errors[field]?.[0]
-
-  const onGenerate = () => {
-    setPassword(generatePassword())
-    setShowPassword(true)
-    setCopied(false)
-  }
-
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(password)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Clipboard bisa diblokir browser; pengguna tetap dapat menyalin manual dari kolom.
-    }
-  }
+  const describedBy = (field: string) => (firstError(field) ? `${field}-help` : undefined)
+  const emailChanged = isEdit && !!user && email.trim().toLowerCase() !== user.email.toLowerCase()
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -66,7 +52,6 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
     if (!name.trim()) local.name = ['Nama wajib diisi.']
     if (!email.trim()) local.email = ['Email wajib diisi.']
     if (!isSelf && !role) local.role = ['Role wajib dipilih.']
-    if (!isEdit && !password) local.password = ['Kata sandi wajib diisi.']
     setErrors(local)
     if (Object.keys(local).length > 0) return
 
@@ -75,14 +60,19 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
       payload.role = role
       payload.status = status
     }
-    if (password) payload.password = password
 
     setSubmitting(true)
     try {
-      const res = isEdit
-        ? await api.patch<ApiMessage<User>>(`/users/${user!.id}`, payload)
-        : await api.post<ApiMessage<User>>('/users', payload)
-      onSaved(res.data.message ?? 'Pengguna berhasil disimpan.')
+      if (isEdit) {
+        const res = await api.patch<ApiMessage<User>>(`/users/${user!.id}`, payload)
+        onSaved(res.data.message ?? 'Pengguna berhasil diperbarui.')
+      } else {
+        const res = await api.post<CreatedUserResponse>('/users', payload)
+        onSaved(
+          'Pengguna berhasil dibuat.',
+          res.data.temporary_password ? { name: res.data.data.name, email: res.data.data.email, password: res.data.temporary_password, reason: 'created' } : undefined,
+        )
+      }
     } catch (error) {
       const apiError = toApiError(error)
       if (apiError.kind === 'validation' && Object.keys(apiError.fieldErrors).length > 0) {
@@ -94,8 +84,6 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
       setSubmitting(false)
     }
   }
-
-  const describedBy = (field: string, hasHint = false) => (firstError(field) || hasHint ? `${field}-help` : undefined)
 
   return (
     <Modal
@@ -136,7 +124,12 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
           />
         </Field>
 
-        <Field id="email" label="Email" error={firstError('email')}>
+        <Field
+          id="email"
+          label="Email"
+          error={firstError('email')}
+          hint={emailChanged ? 'Pemilik akun akan diberi tahu lewat email lama. Perubahan ini tercatat di riwayat aktivitas.' : undefined}
+        >
           <input
             id="email"
             type="email"
@@ -145,7 +138,7 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
             maxLength={255}
             autoComplete="off"
             aria-invalid={!!firstError('email')}
-            aria-describedby={describedBy('email')}
+            aria-describedby={firstError('email') || emailChanged ? 'email-help' : undefined}
             className={inputClass(!!firstError('email'))}
           />
         </Field>
@@ -198,46 +191,11 @@ export function UserFormModal({ mode, user, roles, rolesLoading = false, rolesEr
           </p>
         )}
 
-        <Field
-          id="password"
-          label={isEdit ? 'Kata sandi baru (opsional)' : 'Kata sandi'}
-          error={firstError('password')}
-          hint={
-            isEdit && !isSelf
-              ? 'Kosongkan jika tidak diubah. Jika diisi, pengguna dikeluarkan dari semua perangkat. Minimal 12 karakter, ada huruf dan angka.'
-              : 'Minimal 12 karakter, ada huruf dan angka.'
-          }
-        >
-          <div className="flex gap-2">
-            <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              aria-invalid={!!firstError('password')}
-              aria-describedby={describedBy('password', true)}
-              className={`${inputClass(!!firstError('password'))} font-mono`}
-            />
-            <Button variant="secondary" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}>
-              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
-            </Button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={onGenerate} icon={<RefreshCw className="h-4 w-4" aria-hidden />} className="!px-3 !py-1.5 !text-xs">
-              Buat acak
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={onCopy}
-              disabled={!password}
-              icon={copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
-              className="!px-3 !py-1.5 !text-xs"
-            >
-              {copied ? 'Tersalin' : 'Salin'}
-            </Button>
-          </div>
-        </Field>
+        <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
+          {isEdit
+            ? 'Kata sandi tidak diubah dari sini. Untuk pengguna yang lupa kata sandi, gunakan aksi "Reset kata sandi" di daftar pengguna.'
+            : 'Kata sandi sementara dibuat otomatis oleh sistem dan ditampilkan sekali setelah akun dibuat. Pengguna wajib menggantinya saat login pertama, sehingga Admin tidak pernah mengetahui kata sandi akhirnya.'}
+        </p>
       </form>
     </Modal>
   )

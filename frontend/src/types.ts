@@ -14,6 +14,8 @@ export interface User {
   primary_role: RoleSlug | null
   roles: Role[]
   permissions: string[]
+  /** true = masih memakai kata sandi sementara dari Admin dan wajib menggantinya. */
+  must_change_password: boolean
   last_login_at: string | null
   created_at: string | null
   /** Terisi bila akun sudah dihapus (soft delete). */
@@ -52,4 +54,24 @@ export interface AdminSummary {
 export interface ApiMessage<T> {
   data: T
   message?: string
+}
+
+/** Response tambah pengguna: kata sandi sementara hanya ada di response ini (tampil sekali). */
+export interface CreatedUserResponse extends ApiMessage<User> {
+  temporary_password?: string
+}
+
+/** Response reset kata sandi oleh Admin. */
+export interface ResetPasswordResponse extends ApiMessage<User> {
+  temporary_password: string
+}
+
+export interface AuditLogEntry {
+  id: number
+  action: string
+  actor: { id: number | null; name: string | null; email: string | null }
+  target: { type: string | null; id: number | null; label: string | null }
+  changes: Record<string, unknown> | null
+  ip_address: string | null
+  created_at: string
 }

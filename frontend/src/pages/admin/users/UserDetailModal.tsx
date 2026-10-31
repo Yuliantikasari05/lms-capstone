@@ -6,8 +6,8 @@ import { ErrorState, Spinner } from '../../../components/ui/States'
 import { api } from '../../../lib/api'
 import { STATUS_LABEL, formatDateTime, initials } from '../../../lib/format'
 import { useApiData } from '../../../lib/useApiData'
-import type { User } from '../../../types'
-import { STATUS_TONE } from './shared'
+import type { AuditLogEntry, User } from '../../../types'
+import { ACTION_LABELS, STATUS_TONE, describeChange } from './shared'
 
 interface Props {
   userId: number
@@ -28,6 +28,12 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function UserDetailModal({ userId, onClose, onEdit }: Props) {
   const { data, error, loading, reload } = useApiData(async () => (await api.get<{ data: User }>(`/users/${userId}`)).data.data, [userId])
   const trashed = !!data?.deleted_at
+
+  // Riwayat aktivitas pengelolaan akun ini (hanya Admin yang punya izin audit.view).
+  const audit = useApiData(
+    async () => (await api.get<{ data: AuditLogEntry[] }>('/audit-logs', { params: { target_type: 'user', target_id: userId, per_page: 10 } })).data.data,
+    [userId],
+  )
 
   return (
     <Modal
@@ -67,6 +73,41 @@ export function UserDetailModal({ userId, onClose, onEdit }: Props) {
             <Row label="Login terakhir">{formatDateTime(data.last_login_at)}</Row>
             {trashed && <Row label="Dihapus pada">{formatDateTime(data.deleted_at)}</Row>}
           </dl>
+
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-slate-800">Riwayat aktivitas</h3>
+            {audit.loading && !audit.data && <p className="mt-1 text-sm text-slate-500">Memuat riwayat…</p>}
+            {audit.error && (
+              <p role="alert" className="mt-1 text-sm text-red-600">
+                Riwayat gagal dimuat.{' '}
+                <button type="button" onClick={audit.reload} className="font-medium underline">
+                  Coba lagi
+                </button>
+              </p>
+            )}
+            {audit.data && audit.data.length === 0 && <p className="mt-1 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">Belum ada catatan aktivitas.</p>}
+            {audit.data && audit.data.length > 0 && (
+              <ol className="mt-2 space-y-2.5 border-l-2 border-slate-100 pl-3">
+                {audit.data.map((entry) => {
+                  const details = describeChange(entry)
+                  const byOwner = entry.actor.id !== null && entry.actor.id === entry.target.id
+                  return (
+                    <li key={entry.id} className="text-sm">
+                      <p className="font-medium text-slate-800">{ACTION_LABELS[entry.action] ?? entry.action}</p>
+                      <p className="text-xs text-slate-500">
+                        {formatDateTime(entry.created_at)} · oleh {byOwner ? 'pemilik akun' : (entry.actor.name ?? 'akun yang sudah dihapus')}
+                      </p>
+                      {details.map((line) => (
+                        <p key={line} className="break-words text-xs text-slate-600">
+                          {line}
+                        </p>
+                      ))}
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
+          </div>
 
           <div className="mt-4">
             <h3 className="text-sm font-semibold text-slate-800">Kelas yang diikuti</h3>

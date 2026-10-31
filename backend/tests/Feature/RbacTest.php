@@ -99,12 +99,13 @@ class RbacTest extends TestCase
         $this->actingAs($admin, 'web')->postJson('/api/v1/users', [
             'name' => 'Karyawan Baru',
             'email' => 'Karyawan.Baru@Example.test',
-            'password' => 'KataSandiKuat123',
             'role' => 'karyawan',
         ])
             ->assertCreated()
             ->assertJsonPath('data.email', 'karyawan.baru@example.test')
-            ->assertJsonPath('data.primary_role', 'karyawan');
+            ->assertJsonPath('data.primary_role', 'karyawan')
+            ->assertJsonPath('data.must_change_password', true)
+            ->assertJsonStructure(['temporary_password']);
 
         $this->assertDatabaseHas('users', ['email' => 'karyawan.baru@example.test', 'status' => 'active']);
     }

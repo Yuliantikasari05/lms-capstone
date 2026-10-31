@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 
 class UpdateUserRequest extends FormRequest
 {
@@ -28,7 +27,8 @@ class UpdateUserRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'email' => ['sometimes', 'required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($target?->id)],
-            'password' => ['sometimes', 'nullable', 'string', Password::min(12)->letters()->numbers()],
+            // Kata sandi diubah lewat reset (POST /users/{id}/reset-password), bukan lewat form ubah.
+            'password' => ['prohibited'],
             'role' => ['sometimes', 'required', 'string', 'exists:roles,slug'],
             'status' => ['sometimes', 'required', Rule::in(User::STATUSES)],
         ];
@@ -37,6 +37,7 @@ class UpdateUserRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'password.prohibited' => 'Kata sandi tidak dapat diubah dari sini. Gunakan "Reset kata sandi".',
             'email.unique' => 'Email sudah terdaftar (termasuk akun yang sudah dihapus; pulihkan dari tab Dihapus).',
             'email.email' => 'Format email tidak valid.',
             'role.exists' => 'Role tidak dikenal.',

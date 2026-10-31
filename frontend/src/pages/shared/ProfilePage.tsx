@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { useAuth } from '../../auth/AuthContext'
 import { ROLE_CONFIG } from '../../config/navigation'
 import { STATUS_LABEL, formatDateTime } from '../../lib/format'
+import { ChangePasswordForm } from './ChangePasswordForm'
 
 export default function ProfilePage() {
   const { user } = useAuth()
@@ -35,6 +36,15 @@ export default function ProfilePage() {
             </dd>
           </div>
         </dl>
+      </Card>
+
+      <Card title="Ganti Kata Sandi" className="mt-4">
+        <p className="mb-4 text-sm text-slate-500">
+          Hanya Anda yang mengetahui kata sandi ini. Administrator dapat mereset kata sandi bila Anda lupa, tetapi tidak dapat melihat kata sandi Anda.
+        </p>
+        <div className="max-w-md">
+          <ChangePasswordForm />
+        </div>
       </Card>
     </>
   )
