@@ -37,6 +37,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'must_change_password' => 'boolean',
             'password' => 'hashed',
         ];
     }
@@ -56,10 +57,16 @@ class User extends Authenticatable
         return self::STATUS_LABELS[$this->status] ?? $this->status;
     }
 
-    /** Mengeluarkan pengguna dari semua perangkat (SESSION_DRIVER=database). */
-    public function revokeSessions(): void
+    /**
+     * Mengeluarkan pengguna dari semua perangkat (SESSION_DRIVER=database).
+     * $exceptSessionId: sesi yang dipertahankan (mis. sesi yang baru saja mengganti kata sandi).
+     */
+    public function revokeSessions(?string $exceptSessionId = null): void
     {
-        DB::table(config('session.table', 'sessions'))->where('user_id', $this->getKey())->delete();
+        DB::table(config('session.table', 'sessions'))
+            ->where('user_id', $this->getKey())
+            ->when($exceptSessionId, fn ($query, $id) => $query->where('id', '!=', $id))
+            ->delete();
     }
 
     /** @param string|array<int,string> $roles */

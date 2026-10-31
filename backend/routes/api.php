@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AdminSummaryController;
+use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\RoleController;
@@ -14,10 +15,12 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         // Logout selalu boleh, bahkan untuk akun yang sudah dinonaktifkan.
-        Route::post('auth/logout', [AuthController::class, 'logout']);
+        Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
 
-        Route::middleware('active')->group(function () {
-            Route::get('auth/me', [AuthController::class, 'me']);
+        // 'password.changed': akun dengan kata sandi sementara hanya boleh ke auth.me dan auth.password.
+        Route::middleware(['active', 'password.changed'])->group(function () {
+            Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
+            Route::post('auth/password', [AuthController::class, 'changePassword'])->name('auth.password')->middleware('throttle:5,1');
 
             Route::get('roles', RoleController::class)->middleware('permission:roles.view');
             Route::get('admin/summary', AdminSummaryController::class)->middleware('permission:dashboard.admin');
@@ -27,6 +30,8 @@ Route::prefix('v1')->group(function () {
             // jika tidak kata "export" akan dibaca sebagai {user}.
             Route::get('users/export', [UserController::class, 'export'])->middleware('throttle:10,1');
             Route::post('users/{user}/restore', [UserController::class, 'restore'])->withTrashed();
+            Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->middleware('throttle:20,1');
+            Route::get('audit-logs', AuditLogController::class)->middleware('permission:audit.view');
             Route::apiResource('users', UserController::class)->withTrashed(['show']);
         });
     });

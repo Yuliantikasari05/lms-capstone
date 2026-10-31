@@ -140,9 +140,8 @@ class UserManagementTest extends TestCase
         $this->asAdmin()->postJson('/api/v1/users', [
             'name' => 'Mentor Baru',
             'email' => 'mentor.baru@example.test',
-            'password' => 'KataSandiKuat123',
             'role' => 'mentor',
-        ])->assertCreated()->assertJsonPath('message', 'Pengguna berhasil dibuat.');
+        ])->assertCreated()->assertJsonPath('message', 'Pengguna berhasil dibuat. Kata sandi sementara hanya ditampilkan sekali.');
 
         $user = User::where('email', 'mentor.baru@example.test')->firstOrFail();
         $this->assertSame('active', $user->status);
@@ -157,7 +156,6 @@ class UserManagementTest extends TestCase
         $this->asAdmin()->postJson('/api/v1/users', [
             'name' => 'Orang Baru',
             'email' => 'lama@example.test',
-            'password' => 'KataSandiKuat123',
             'role' => 'siswa',
         ])->assertStatus(422)->assertJsonValidationErrors(['email']);
     }
@@ -193,28 +191,6 @@ class UserManagementTest extends TestCase
 
         $user->delete();
         $this->asAdmin()->patchJson('/api/v1/users/'.$user->id, ['name' => 'X'])->assertNotFound();
-    }
-
-    public function test_admin_password_reset_signs_the_user_out_everywhere(): void
-    {
-        $user = $this->userWithRole(Role::SISWA);
-        $this->fakeSession($user);
-        $this->assertSame(1, DB::table('sessions')->where('user_id', $user->id)->count());
-
-        $this->asAdmin()->patchJson('/api/v1/users/'.$user->id, ['password' => 'PasswordBaru12345'])->assertOk();
-
-        $this->assertSame(0, DB::table('sessions')->where('user_id', $user->id)->count());
-        $this->assertTrue(password_verify('PasswordBaru12345', $user->fresh()->password));
-    }
-
-    public function test_update_without_password_keeps_sessions(): void
-    {
-        $user = $this->userWithRole(Role::SISWA);
-        $this->fakeSession($user);
-
-        $this->asAdmin()->patchJson('/api/v1/users/'.$user->id, ['name' => 'Ganti Nama Saja'])->assertOk();
-
-        $this->assertSame(1, DB::table('sessions')->where('user_id', $user->id)->count());
     }
 
     // ------------------------------------------------------------------ hapus & pulihkan

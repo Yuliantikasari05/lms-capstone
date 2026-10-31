@@ -38,6 +38,12 @@ class UserPolicy
         return $actor->hasPermission('users.delete');
     }
 
+    /** Reset kata sandi: izin khusus, dan tidak untuk akun sendiri (pakai "ganti kata sandi"). */
+    public function resetPassword(User $actor, User $target): bool
+    {
+        return $actor->hasPermission('users.reset_password') && ! $actor->is($target);
+    }
+
     public function export(User $actor): bool
     {
         return $actor->hasPermission('users.export');

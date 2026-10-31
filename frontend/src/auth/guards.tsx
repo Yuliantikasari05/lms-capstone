@@ -4,6 +4,7 @@ import { Button } from '../components/ui/Button'
 import { isRoleSlug, roleHome } from '../config/navigation'
 import type { RoleSlug } from '../types'
 import ForbiddenPage from '../pages/shared/ForbiddenPage'
+import ForcePasswordChangePage from '../pages/shared/ForcePasswordChangePage'
 import { useAuth } from './AuthContext'
 
 /** Hanya untuk UX. Backend tetap memeriksa autentikasi dan permission pada setiap request. */
@@ -24,6 +25,9 @@ export function RequireAuth() {
   }
 
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+
+  // Kata sandi sementara dari Admin: wajib diganti sebelum memakai aplikasi (backend juga menolak endpoint lain).
+  if (user.must_change_password) return <ForcePasswordChangePage />
 
   return <Outlet />
 }
