@@ -144,6 +144,9 @@ Semua keputusan di bawah ditetapkan pemilik proyek pada 27 Oktober 2026. Aturan 
 | Kehadiran | Tercatat otomatis saat peserta menekan "Gabung sesi". Tombol aktif 15 menit sebelum sesi sampai sesi selesai. |
 | Sertifikat | Untuk Karyawan. Syarat: nilai tugas dan ujian memenuhi batas minimum serta kehadiran memenuhi batas minimum. Admin lalu mereview dan menyetujui secara manual. |
 | Kupon dan voucher | Arah sementara, masih perlu konfirmasi: kupon Admin dan voucher Lembaga adalah dua fitur terpisah (usulan teknis: satu tabel dengan kolom pemilik, menu dan hak akses terpisah). |
+| Waktu belajar (2 Nov 2026) | Selama halaman materi terbuka dan sedang dilihat, frontend mengirim sinyal ke backend setiap 1 menit; setiap sinyal dihitung 1 menit belajar. Materi yang ditinggal terbuka di tab lain tidak terhitung. Dijumlahkan per mata pelajaran dan per bulan untuk Laporan dan grafik jam belajar. |
+| Hari aktif dan streak (2 Nov 2026) | Dihitung per hari kalender (WIB) dari login: login pertama di setiap tanggal dihitung satu hari aktif, login berikutnya di tanggal yang sama tidak dihitung lagi. Hari aktif menjadi dasar "Total Hari Aktif" di Laporan dan "Daily Streak" di dashboard. |
+| Pencapaian dan level (2 Nov 2026) | Ada di sistem, tetapi aturan pemberian pencapaian dan batas XP per level menyusul. Sampai diputuskan, tampilan memakai data contoh. |
 
 ## Kondisi implementasi saat ini
 
@@ -232,3 +235,6 @@ Pertanyaan ini perlu dijawab sebelum tahap terkait dikerjakan. Setelah dijawab, 
 - [ ] **Diskusi dan rating:** cakupan forum diskusi (Mentor dengan Karyawan, Lembaga dengan Siswa) dan siapa yang melihat rating materi dari Siswa.
 - [ ] **Bagi hasil Admin dan Lembaga:** ada potongan atau hanya pemantauan angka? (tahap 8)
 - [ ] **Bentuk sertifikat:** file PDF bernomor, masa berlaku, dan cara verifikasi. (tahap 6)
+- [ ] **Kapan streak putus:** berapa lama tanpa hari aktif baru sampai streak kembali ke 0? (tahap 1)
+- [ ] **Aturan pencapaian:** jenis pencapaian dan syarat mendapatkannya. (tahap 5)
+- [ ] **Batas XP per level:** nama level dan XP minimal masing-masing, contoh "Silver Elite". (tahap 5)
