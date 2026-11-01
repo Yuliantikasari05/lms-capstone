@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AccountControls } from '../components/AccountControls'
 import { BRAND_ICON, ROLE_CONFIG, itemHref } from '../config/navigation'
-import type { RoleSlug } from '../types'
 
-export function TopNavLayout({ role }: { role: Exclude<RoleSlug, 'admin'> }) {
-  const config = ROLE_CONFIG[role]
+const config = ROLE_CONFIG.siswa
+
+/** Layout Siswa: header + navigasi horizontal di atas. */
+export function SiswaLayout() {
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
   const BrandIcon = BRAND_ICON
@@ -43,7 +44,7 @@ export function TopNavLayout({ role }: { role: Exclude<RoleSlug, 'admin'> }) {
           {config.items.map((item) => (
             <li key={item.key} className="md:shrink-0">
               <NavLink
-                to={itemHref(role, item)}
+                to={itemHref('siswa', item)}
                 end={item.path === ''}
                 className={({ isActive }) =>
                   `flex items-center gap-2 whitespace-nowrap px-3 py-3 text-sm font-medium transition-colors md:border-b-2 ${

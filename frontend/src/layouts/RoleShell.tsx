@@ -1,10 +1,22 @@
-import { ROLE_CONFIG } from '../config/navigation'
+import type { ComponentType } from 'react'
 import type { RoleSlug } from '../types'
 import { AdminLayout } from './AdminLayout'
-import { TopNavLayout } from './TopNavLayout'
+import { KaryawanLayout } from './KaryawanLayout'
+import { LembagaLayout } from './LembagaLayout'
+import { MentorLayout } from './MentorLayout'
+import { SiswaLayout } from './SiswaLayout'
 
-/** Memilih layout sesuai role: Admin = sidebar, role lain = navigasi horizontal. */
+/** Setiap role punya file layout sendiri: Admin = sidebar, role lain = navigasi horizontal. */
+const LAYOUTS: Record<RoleSlug, ComponentType> = {
+  admin: AdminLayout,
+  mentor: MentorLayout,
+  siswa: SiswaLayout,
+  karyawan: KaryawanLayout,
+  lembaga: LembagaLayout,
+}
+
+/** Memilih layout sesuai role. */
 export function RoleShell({ role }: { role: RoleSlug }) {
-  if (ROLE_CONFIG[role].layout === 'sidebar') return <AdminLayout />
-  return <TopNavLayout role={role as Exclude<RoleSlug, 'admin'>} />
+  const Layout = LAYOUTS[role]
+  return <Layout />
 }

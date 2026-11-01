@@ -1,23 +1,31 @@
-import { type ReactElement } from 'react'
+import { type ComponentType, type ReactElement } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { HomeRedirect, RequireAuth, RequireRole } from './auth/guards'
 import { ROLE_CONFIG, ROLE_SLUGS, type NavItem } from './config/navigation'
 import { RoleShell } from './layouts/RoleShell'
-import AdminDashboard from './pages/admin/AdminDashboard'
-import UsersPage from './pages/admin/UsersPage'
+import { adminPages } from './pages/admin'
+import { karyawanPages } from './pages/karyawan'
+import { lembagaPages } from './pages/lembaga'
 import LoginPage from './pages/LoginPage'
-import RoleDashboard from './pages/RoleDashboard'
+import { mentorPages } from './pages/mentor'
 import NotFoundPage from './pages/shared/NotFoundPage'
 import PlaceholderPage from './pages/shared/PlaceholderPage'
-import ProfilePage from './pages/shared/ProfilePage'
+import { siswaPages } from './pages/siswa'
 import type { RoleSlug } from './types'
 
-/** Menentukan halaman untuk setiap menu. Menu yang belum punya fitur memakai placeholder. */
+/** Halaman setiap role ada di folder pages/<role>/, didaftarkan di index.ts folder itu. */
+const ROLE_PAGES: Record<RoleSlug, Record<string, ComponentType>> = {
+  admin: adminPages,
+  mentor: mentorPages,
+  siswa: siswaPages,
+  karyawan: karyawanPages,
+  lembaga: lembagaPages,
+}
+
+/** Menentukan halaman untuk setiap menu. Menu yang belum didaftarkan memakai placeholder. */
 function pageFor(role: RoleSlug, item: NavItem): ReactElement {
-  if (item.path === '') return role === 'admin' ? <AdminDashboard /> : <RoleDashboard role={role} />
-  if (role === 'admin' && item.key === 'users') return <UsersPage />
-  if (item.key === 'profile') return <ProfilePage />
-  return <PlaceholderPage title={item.label} />
+  const Page = ROLE_PAGES[role][item.key]
+  return Page ? <Page /> : <PlaceholderPage title={item.label} />
 }
 
 export default function App() {
