@@ -20,6 +20,7 @@ import {
   Bell,
   type LucideIcon,
 } from 'lucide-react'
+import type { ComponentType } from 'react'
 import type { RoleSlug } from '../types'
 
 export interface NavItem {
@@ -28,6 +29,13 @@ export interface NavItem {
   /** Segmen path relatif terhadap /{role}. String kosong = halaman utama (dashboard). */
   path: string
   icon: LucideIcon
+}
+
+/** Halaman tambahan yang tidak tampil di menu, misalnya halaman detail. */
+export interface ExtraRoute {
+  /** Path relatif terhadap /{role}, contoh 'materials/:courseId'. */
+  path: string
+  Page: ComponentType
 }
 
 /** Menu setiap role. Layout ada di layouts/<Role>Layout.tsx, halaman di pages/<role>/. */
