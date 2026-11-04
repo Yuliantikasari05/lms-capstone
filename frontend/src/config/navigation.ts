@@ -20,7 +20,6 @@ import {
   Bell,
   type LucideIcon,
 } from 'lucide-react'
-import type { ComponentType } from 'react'
 import type { RoleSlug } from '../types'
 
 export interface NavItem {
@@ -29,28 +28,33 @@ export interface NavItem {
   /** Segmen path relatif terhadap /{role}. String kosong = halaman utama (dashboard). */
   path: string
   icon: LucideIcon
+  /**
+   * true = halaman ini punya sub-rute sendiri (mis. /admin/courses/5 untuk detail).
+   * Rutenya didaftarkan sebagai "path/*" dan sub-rutenya diatur di dalam halaman itu.
+   */
+  nested?: boolean
 }
 
-/** Halaman tambahan yang tidak tampil di menu, misalnya halaman detail. */
-export interface ExtraRoute {
-  /** Path relatif terhadap /{role}, contoh 'materials/:courseId'. */
-  path: string
-  Page: ComponentType
-}
-
-/** Menu setiap role. Layout ada di layouts/<Role>Layout.tsx, halaman di pages/<role>/. */
 export interface RoleConfig {
   label: string
+  /** Admin memakai sidebar vertikal; role lain memakai navigasi horizontal. */
+  layout: 'sidebar' | 'topnav'
   items: NavItem[]
+  /** Kartu ringkasan dashboard untuk role non-Admin. Nilainya belum tersedia (belum ada modul). */
+  summaryCards: string[]
+  activityTitle: string
 }
 
 export const ROLE_CONFIG: Record<RoleSlug, RoleConfig> = {
   admin: {
     label: 'Admin',
+    layout: 'sidebar',
+    summaryCards: [],
+    activityTitle: 'Login terbaru',
     items: [
       { key: 'dashboard', label: 'Dashboard', path: '', icon: LayoutDashboard },
       { key: 'users', label: 'Manajemen User', path: 'users', icon: Users },
-      { key: 'courses', label: 'Manajemen Kursus', path: 'courses', icon: BookOpen },
+      { key: 'courses', label: 'Manajemen Kursus', path: 'courses', icon: BookOpen, nested: true },
       { key: 'coupons', label: 'Manajemen Kupon', path: 'coupons', icon: Ticket },
       { key: 'gamification', label: 'Gamifikasi', path: 'gamification', icon: Trophy },
       { key: 'institutions', label: 'Lembaga Bimbingan', path: 'institutions', icon: Building2 },
@@ -59,6 +63,9 @@ export const ROLE_CONFIG: Record<RoleSlug, RoleConfig> = {
   },
   mentor: {
     label: 'Mentor',
+    layout: 'topnav',
+    summaryCards: ['Kelas aktif', 'Jumlah siswa', 'Jadwal mendatang', 'Tugas perlu diperiksa'],
+    activityTitle: 'Aktivitas terbaru',
     items: [
       { key: 'overview', label: 'Ringkasan', path: '', icon: LayoutDashboard },
       { key: 'courses', label: 'Kursus Saya', path: 'courses', icon: BookOpen },
@@ -72,6 +79,9 @@ export const ROLE_CONFIG: Record<RoleSlug, RoleConfig> = {
   },
   siswa: {
     label: 'Siswa',
+    layout: 'topnav',
+    summaryCards: ['Kursus diikuti', 'Tugas perlu dikerjakan', 'Progres belajar', 'Jadwal mendatang'],
+    activityTitle: 'Aktivitas belajar',
     items: [
       { key: 'overview', label: 'Ringkasan', path: '', icon: LayoutDashboard },
       { key: 'materials', label: 'Materi', path: 'materials', icon: BookOpen },
@@ -85,6 +95,9 @@ export const ROLE_CONFIG: Record<RoleSlug, RoleConfig> = {
   },
   karyawan: {
     label: 'Karyawan',
+    layout: 'topnav',
+    summaryCards: ['Pelatihan diikuti', 'Webinar mendatang', 'Progres pelatihan', 'Status sertifikat'],
+    activityTitle: 'Aktivitas pelatihan',
     items: [
       { key: 'overview', label: 'Ringkasan', path: '', icon: LayoutDashboard },
       { key: 'trainings', label: 'Pelatihan', path: 'trainings', icon: BookMarked },
@@ -98,6 +111,9 @@ export const ROLE_CONFIG: Record<RoleSlug, RoleConfig> = {
   },
   lembaga: {
     label: 'Lembaga Bimbingan',
+    layout: 'topnav',
+    summaryCards: ['Program aktif', 'Jumlah siswa', 'Progres belajar'],
+    activityTitle: 'Aktivitas program',
     items: [
       { key: 'overview', label: 'Ringkasan', path: '', icon: LayoutDashboard },
       { key: 'modules', label: 'Kelola Modul', path: 'modules', icon: Layers },

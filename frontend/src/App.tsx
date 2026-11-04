@@ -1,36 +1,25 @@
-import { type ComponentType, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { HomeRedirect, RequireAuth, RequireRole } from './auth/guards'
-import { ROLE_CONFIG, ROLE_SLUGS, type ExtraRoute, type NavItem } from './config/navigation'
+import { ROLE_CONFIG, ROLE_SLUGS, type NavItem } from './config/navigation'
 import { RoleShell } from './layouts/RoleShell'
-import { adminPages } from './pages/admin'
-import { karyawanPages } from './pages/karyawan'
-import { lembagaPages } from './pages/lembaga'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import CoursesPage from './pages/admin/CoursesPage'
+import UsersPage from './pages/admin/UsersPage'
 import LoginPage from './pages/LoginPage'
-import { mentorPages } from './pages/mentor'
+import RoleDashboard from './pages/RoleDashboard'
 import NotFoundPage from './pages/shared/NotFoundPage'
 import PlaceholderPage from './pages/shared/PlaceholderPage'
-import { siswaPages, siswaRoutes } from './pages/siswa'
+import ProfilePage from './pages/shared/ProfilePage'
 import type { RoleSlug } from './types'
 
-/** Halaman setiap role ada di folder pages/<role>/, didaftarkan di index.ts folder itu. */
-const ROLE_PAGES: Record<RoleSlug, Record<string, ComponentType>> = {
-  admin: adminPages,
-  mentor: mentorPages,
-  siswa: siswaPages,
-  karyawan: karyawanPages,
-  lembaga: lembagaPages,
-}
-
-/** Halaman di luar menu (misalnya detail), didaftarkan di index.ts folder role. */
-const ROLE_EXTRA_ROUTES: Partial<Record<RoleSlug, ExtraRoute[]>> = {
-  siswa: siswaRoutes,
-}
-
-/** Menentukan halaman untuk setiap menu. Menu yang belum didaftarkan memakai placeholder. */
+/** Menentukan halaman untuk setiap menu. Menu yang belum punya fitur memakai placeholder. */
 function pageFor(role: RoleSlug, item: NavItem): ReactElement {
-  const Page = ROLE_PAGES[role][item.key]
-  return Page ? <Page /> : <PlaceholderPage title={item.label} />
+  if (item.path === '') return role === 'admin' ? <AdminDashboard /> : <RoleDashboard role={role} />
+  if (role === 'admin' && item.key === 'users') return <UsersPage />
+  if (role === 'admin' && item.key === 'courses') return <CoursesPage />
+  if (item.key === 'profile') return <ProfilePage />
+  return <PlaceholderPage title={item.label} />
 }
 
 export default function App() {
@@ -48,12 +37,9 @@ export default function App() {
                 item.path === '' ? (
                   <Route key={item.key} index element={pageFor(role, item)} />
                 ) : (
-                  <Route key={item.key} path={item.path} element={pageFor(role, item)} />
+                  <Route key={item.key} path={item.nested ? `${item.path}/*` : item.path} element={pageFor(role, item)} />
                 ),
               )}
-              {ROLE_EXTRA_ROUTES[role]?.map(({ path, Page }) => (
-                <Route key={path} path={path} element={<Page />} />
-              ))}
               <Route path="*" element={<Navigate to={`/${role}`} replace />} />
             </Route>
           </Route>
