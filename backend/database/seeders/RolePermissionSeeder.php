@@ -17,6 +17,13 @@ class RolePermissionSeeder extends Seeder
         'users.export' => 'Mengekspor daftar pengguna',
         'users.reset_password' => 'Mereset kata sandi pengguna (kata sandi sementara)',
         'audit.view' => 'Melihat riwayat aktivitas pengelolaan akun',
+        'courses.view' => 'Melihat daftar dan detail kursus',
+        'courses.create' => 'Membuat kursus',
+        'courses.update' => 'Mengubah kursus',
+        'courses.delete' => 'Menghapus kursus',
+        'courses.assign_mentor' => 'Menetapkan atau mengganti Mentor kursus',
+        'content.manage' => 'Mengelola modul, materi, dan sesi kursus',
+        'enrollments.manage' => 'Mendaftarkan dan mencabut peserta kursus',
         'roles.view' => 'Melihat daftar role',
         'dashboard.admin' => 'Mengakses dashboard Admin',
         'dashboard.mentor' => 'Mengakses dashboard Mentor',
@@ -35,7 +42,8 @@ class RolePermissionSeeder extends Seeder
 
     /** Prinsip least privilege: tiap role hanya mendapat permission yang dibutuhkan. */
     public const MATRIX = [
-        Role::ADMIN => ['users.view', 'users.create', 'users.update', 'users.delete', 'users.export', 'users.reset_password', 'audit.view', 'roles.view', 'dashboard.admin'],
+        Role::ADMIN => ['users.view', 'users.create', 'users.update', 'users.delete', 'users.export', 'users.reset_password', 'audit.view', 'roles.view', 'dashboard.admin',
+            'courses.view', 'courses.create', 'courses.update', 'courses.delete', 'courses.assign_mentor', 'content.manage', 'enrollments.manage'],
         Role::MENTOR => ['dashboard.mentor'],
         Role::SISWA => ['dashboard.siswa'],
         Role::KARYAWAN => ['dashboard.karyawan'],

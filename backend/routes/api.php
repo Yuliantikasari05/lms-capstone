@@ -33,6 +33,9 @@ Route::prefix('v1')->group(function () {
             Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->middleware('throttle:20,1');
             Route::get('audit-logs', AuditLogController::class)->middleware('permission:audit.view');
             Route::apiResource('users', UserController::class)->withTrashed(['show']);
+
+            // Modul kursus (kursus, modul, materi, sesi, peserta): lihat routes/api/courses.php
+            require __DIR__.'/api/courses.php';
         });
     });
 });
