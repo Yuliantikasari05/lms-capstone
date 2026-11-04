@@ -3,7 +3,7 @@ import AdminDashboard from './AdminDashboard'
 import AdminGamifikasi from './Gamifikasi'
 import AdminLembagaBimbingan from './LembagaBimbingan'
 import AdminManajemenKupon from './ManajemenKupon'
-import AdminManajemenKursus from './ManajemenKursus'
+import CoursesPage from './CoursesPage'
 import AdminPengaturan from './Pengaturan'
 import UsersPage from './UsersPage'
 
@@ -11,7 +11,7 @@ import UsersPage from './UsersPage'
 export const adminPages: Record<string, ComponentType> = {
   dashboard: AdminDashboard,
   users: UsersPage,
-  courses: AdminManajemenKursus,
+  courses: CoursesPage,
   coupons: AdminManajemenKupon,
   gamification: AdminGamifikasi,
   institutions: AdminLembagaBimbingan,
