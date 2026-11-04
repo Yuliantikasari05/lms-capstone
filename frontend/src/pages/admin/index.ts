@@ -1,4 +1,6 @@
 import type { ComponentType } from 'react'
+import type { ExtraRoute } from '../../config/navigation'
+import ProfilePage from '../shared/ProfilePage'
 import AdminDashboard from './AdminDashboard'
 import AdminGamifikasi from './Gamifikasi'
 import AdminLembagaBimbingan from './LembagaBimbingan'
@@ -17,3 +19,6 @@ export const adminPages: Record<string, ComponentType> = {
   institutions: AdminLembagaBimbingan,
   settings: AdminPengaturan,
 }
+
+/** Halaman Admin di luar menu. Profil dibuka dari menu akun di kanan atas. */
+export const adminRoutes: ExtraRoute[] = [{ path: 'profile', Page: ProfilePage }]

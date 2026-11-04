@@ -3,8 +3,8 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { HomeRedirect, RequireAuth, RequireRole } from './auth/guards'
 import { ROLE_CONFIG, ROLE_SLUGS, type ExtraRoute, type NavItem } from './config/navigation'
 import { RoleShell } from './layouts/RoleShell'
-import { adminPages } from './pages/admin'
-import { karyawanPages } from './pages/karyawan'
+import { adminPages, adminRoutes } from './pages/admin'
+import { karyawanPages, karyawanRoutes } from './pages/karyawan'
 import { lembagaPages } from './pages/lembaga'
 import LoginPage from './pages/LoginPage'
 import { mentorPages } from './pages/mentor'
@@ -24,7 +24,9 @@ const ROLE_PAGES: Record<RoleSlug, Record<string, ComponentType>> = {
 
 /** Halaman di luar menu (misalnya detail), didaftarkan di index.ts folder role. */
 const ROLE_EXTRA_ROUTES: Partial<Record<RoleSlug, ExtraRoute[]>> = {
+  admin: adminRoutes,
   siswa: siswaRoutes,
+  karyawan: karyawanRoutes,
 }
 
 /** Menentukan halaman untuk setiap menu. Menu yang belum didaftarkan memakai placeholder. */
