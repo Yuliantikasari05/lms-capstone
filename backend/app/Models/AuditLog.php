@@ -51,12 +51,22 @@ class AuditLog extends Model
             'action' => $action,
             'target_type' => $target ? Str::snake(class_basename($target)) : null,
             'target_id' => $target?->getKey(),
-            'target_label' => $target instanceof User ? "{$target->name} ({$target->email})" : null,
+            'target_label' => self::labelFor($target),
             'changes' => $changes === [] ? null : self::stripSecrets($changes),
             'ip_address' => $request?->ip(),
             'user_agent' => $request?->userAgent() ? mb_substr($request->userAgent(), 0, 255) : null,
             'created_at' => now(),
         ]);
+    }
+
+    /** Label yang terbaca manusia: pengguna "Nama (email)"; model lain lewat method auditLabel() bila ada. */
+    private static function labelFor(?Model $target): ?string
+    {
+        if ($target instanceof User) {
+            return "{$target->name} ({$target->email})";
+        }
+
+        return $target !== null && method_exists($target, 'auditLabel') ? mb_substr((string) $target->auditLabel(), 0, 255) : null;
     }
 
     /** Pengaman berlapis: buang kunci berbau rahasia di kedalaman mana pun. */

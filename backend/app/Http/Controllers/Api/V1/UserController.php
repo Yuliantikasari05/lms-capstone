@@ -7,6 +7,7 @@ use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\AuditLog;
+use App\Models\Course;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\EmailAddressChanged;
@@ -98,6 +99,10 @@ class UserController extends Controller
         }
 
         $user->loadMissing('roles');
+        if (isset($data['role']) && $data['role'] !== Role::MENTOR && $user->hasRole(Role::MENTOR)) {
+            $this->ensureNotMentoringCourses($user, 'role Mentor diubah');
+        }
+
         $before = [
             'name' => $user->name,
             'email' => $user->email,
@@ -147,6 +152,7 @@ class UserController extends Controller
     public function destroy(Request $request, User $user): JsonResponse
     {
         Gate::authorize('delete', $user);
+        $this->ensureNotMentoringCourses($user, 'dihapus');
 
         DB::transaction(function () use ($user, $request) {
             $user->revokeSessions();
@@ -241,6 +247,21 @@ class UserController extends Controller
 
             fclose($out);
         }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /**
+     * Mentor yang masih mengampu kursus (draf atau aktif) tidak boleh dihapus atau diubah rolenya,
+     * agar tidak ada kursus tanpa pengampu. Ganti Mentor atau nonaktifkan kursusnya dulu.
+     */
+    private function ensureNotMentoringCourses(User $user, string $context): void
+    {
+        $count = $user->mentoredCourses()->whereIn('status', [Course::STATUS_DRAFT, Course::STATUS_ACTIVE])->count();
+
+        if ($count > 0) {
+            throw ValidationException::withMessages([
+                'user' => ["Pengguna masih menjadi Mentor pada {$count} kursus, sehingga tidak dapat {$context}. Ganti Mentor atau nonaktifkan kursus tersebut terlebih dahulu."],
+            ]);
+        }
     }
 
     /** @return array<string,mixed> */
