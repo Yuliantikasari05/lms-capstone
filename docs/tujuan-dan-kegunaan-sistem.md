@@ -62,8 +62,8 @@ Sistem mengenal empat jenis kursus. Hampir semua aturan bisnis bergantung pada j
 | Pembuat | Admin atau Mentor | Admin atau Mentor | Admin atau Mentor | Lembaga |
 | Pengajar | 1 Mentor | 1 Mentor | 1 Mentor | Tanpa Mentor |
 | Peserta | Siswa | Karyawan | Karyawan | Siswa |
-| Cara masuk | Didaftarkan Admin | Didaftarkan Admin | Didaftarkan Admin | Siswa membeli sendiri dari katalog |
-| Pembayaran | Tidak ada | Simulasi (tahap awal) | Simulasi (tahap awal) | Simulasi, nanti payment gateway |
+| Cara masuk | Didaftarkan Admin | Karyawan memilih dan membayar sendiri | Karyawan memilih dan membayar sendiri | Siswa membeli sendiri dari katalog |
+| Pembayaran | Tidak ada | Wajib sebelum materi terbuka (simulasi, nanti payment gateway) | Wajib sebelum materi terbuka (simulasi, nanti payment gateway) | Simulasi, nanti payment gateway |
 | Isi | Materi, sesi, tugas, ujian | Materi, sesi, tugas, ujian | Materi, sesi, tugas, ujian | Materi dan sesi saja |
 | Review Admin | Tugas dan ujian | Tugas dan ujian | Tugas dan ujian | Nilai XP materi |
 | XP | Ya | Tidak | Tidak | Ya |
@@ -101,7 +101,7 @@ Ada lima alur utama. Semua alur bertumpu pada data yang sama: kursus, enrollment
 
 ### C. Pelatihan Karyawan dan sertifikasi
 
-1. Admin atau Mentor membuat pelatihan atau webinar. Admin mendaftarkan Karyawan.
+1. Admin atau Mentor membuat pelatihan atau webinar. Karyawan memilih pelatihan atau webinar lalu membayar agar materinya terbuka.
 2. Mentor menyusun materi, sesi, tugas, dan ujian. Admin mereview tugas dan ujian.
 3. Karyawan belajar, bergabung ke sesi, serta mengerjakan tugas dan ujian. Mentor menilai.
 4. Karyawan mengajukan sertifikat.
@@ -132,17 +132,19 @@ Semua keputusan di bawah ditetapkan pemilik proyek pada 27 Oktober 2026. Aturan 
 | Lembaga | Satu akun Lembaga mewakili satu lembaga. |
 | Pembuat kursus | Kursus akademik, pelatihan, dan webinar dibuat Admin atau Mentor. Program Lembaga dibuat Lembaga. |
 | Penugasan Mentor | Satu kursus diampu satu Mentor. Mentor tidak mengajar di program Lembaga. |
-| Enrollment | Siswa (akademik) dan Karyawan (pelatihan/webinar) didaftarkan Admin. Program Lembaga dibeli sendiri oleh Siswa dari dashboard. |
+| Enrollment | Siswa (akademik) didaftarkan Admin. Program Lembaga dibeli sendiri oleh Siswa dari dashboard. Pelatihan dan webinar dipilih dan dibayar sendiri oleh Karyawan; Admin tidak dapat mendaftarkan Karyawan tanpa pembayaran (diubah 4 Nov 2026; sebelumnya didaftarkan Admin). |
+| Harga pelatihan dan webinar (4 Nov 2026) | Ditetapkan oleh Admin. Pelatihan dan webinar tidak bisa diaktifkan sebelum harganya diisi, termasuk yang dibuat Mentor. |
 | Siswa dan Lembaga | Lembaga menerima data Siswa yang membeli programnya. Satu Siswa boleh ikut beberapa Lembaga. |
 | Isi program Lembaga | Hanya materi (dan sesi), tanpa tugas dan ujian. |
-| Pembayaran | Dikerjakan di tahap akhir. Sementara ini hanya tampilan dengan tombol "Bayar (simulasi)". Menu Pembayaran Karyawan tetap ada dengan simulasi. |
+| Pembayaran | Dikerjakan di tahap akhir. Sementara ini hanya tampilan dengan tombol "Bayar (simulasi)". Menu Pembayaran Karyawan tetap ada dengan simulasi. Karyawan harus membayar setiap pelatihan dan webinar yang dipilih agar dapat mengakses materinya (4 Nov 2026). |
 | Pemasukan kerja sama | Dikerjakan di tahap akhir bersama pembayaran. |
 | Review Admin | Semua tugas dan semua ujian wajib direview Admin sebelum tampil ke peserta. |
 | XP: penerima | Hanya Siswa. |
 | XP: pengatur | Mentor dan Admin mengatur XP materi, tugas, dan ujian. Untuk program Lembaga, Lembaga mengusulkan XP materi, Admin menyetujui dan boleh mengubahnya. |
 | XP: kapan diberikan | Materi: saat selesai dibaca. Tugas: saat dikumpulkan. |
 | Kehadiran | Tercatat otomatis saat peserta menekan "Gabung sesi". Tombol aktif 15 menit sebelum sesi sampai sesi selesai. |
-| Sertifikat | Untuk Karyawan. Syarat: nilai tugas dan ujian memenuhi batas minimum serta kehadiran memenuhi batas minimum. Admin lalu mereview dan menyetujui secara manual. |
+| Sertifikat | Untuk Karyawan. Syarat: nilai tugas dan ujian memenuhi batas minimum serta kehadiran memenuhi batas minimum. Admin lalu mereview dan menyetujui secara manual. Tombol "Ajukan sertifikat" baru aktif setelah syarat terpenuhi; sebelum itu tampil abu-abu (4 Nov 2026). Pengajuan tampil di halaman Sertifikat dengan label status (Menunggu Review, Ditolak, Disetujui); "Lihat detail" dan "Unduh" baru muncul setelah disetujui (5 Nov 2026). Pengajuan yang ditolak bisa diajukan ulang; tombol "Ajukan Ulang" aktif setelah syarat terpenuhi (5 Nov 2026). |
+| Balasan diskusi (5 Nov 2026) | Semua peserta bisa membalas. Penulis bisa mengubah dan menghapus balasannya sendiri. Mentor dan Admin bisa menghapus semua balasan. |
 | Kupon dan voucher | Arah sementara, masih perlu konfirmasi: kupon Admin dan voucher Lembaga adalah dua fitur terpisah (usulan teknis: satu tabel dengan kolom pemilik, menu dan hak akses terpisah). |
 | Waktu belajar (2 Nov 2026) | Selama halaman materi terbuka dan sedang dilihat, frontend mengirim sinyal ke backend setiap 1 menit; setiap sinyal dihitung 1 menit belajar. Materi yang ditinggal terbuka di tab lain tidak terhitung. Dijumlahkan per mata pelajaran dan per bulan untuk Laporan dan grafik jam belajar. |
 | Hari aktif dan streak (2 Nov 2026) | Dihitung per hari kalender (WIB) dari login: login pertama di setiap tanggal dihitung satu hari aktif, login berikutnya di tanggal yang sama tidak dihitung lagi. Hari aktif menjadi dasar "Total Hari Aktif" di Laporan dan "Daily Streak" di dashboard. |
@@ -229,12 +231,12 @@ Pertanyaan ini perlu dijawab sebelum tahap terkait dikerjakan. Setelah dijawab, 
 - [ ] **XP ujian:** diberikan saat ujian dikumpulkan seperti tugas, atau setelah dinilai? (tahap 3)
 - [ ] **Angka syarat sertifikat:** berapa nilai minimum dan persentase kehadiran minimum? Diatur per kursus atau berlaku global? Siapa yang mengaturnya? (tahap 6)
 - [ ] **Cara menghitung nilai sertifikat:** rata-rata semua tugas dan ujian, atau setiap tugas dan ujian harus lulus? (tahap 6)
-- [ ] **Pembayaran Karyawan:** Karyawan didaftarkan Admin, jadi tagihan apa yang dibayar lewat menu Pembayaran? (tahap 2 untuk tampilan)
 - [ ] **Program Lembaga tanpa XP disetujui:** boleh tampil di katalog dengan XP 0 sambil menunggu review Admin? (tahap 4)
 - [ ] **Kupon dan voucher:** konfirmasi bahwa keduanya fitur terpisah. (tahap 8)
 - [ ] **Diskusi dan rating:** cakupan forum diskusi (Mentor dengan Karyawan, Lembaga dengan Siswa) dan siapa yang melihat rating materi dari Siswa.
 - [ ] **Bagi hasil Admin dan Lembaga:** ada potongan atau hanya pemantauan angka? (tahap 8)
-- [ ] **Bentuk sertifikat:** file PDF bernomor, masa berlaku, dan cara verifikasi. (tahap 6)
+- [ ] **Bentuk sertifikat:** file PDF bernomor, format nomor, nama penanda tangan, masa berlaku, dan cara verifikasi. (tahap 6, ditunda)
 - [ ] **Kapan streak putus:** berapa lama tanpa hari aktif baru sampai streak kembali ke 0? (tahap 1)
 - [ ] **Aturan pencapaian:** jenis pencapaian dan syarat mendapatkannya. (tahap 5)
 - [ ] **Batas XP per level:** nama level dan XP minimal masing-masing, contoh "Silver Elite". (tahap 5)
+- [ ] **Pertanyaan di Webinar (ditunda):** tombol "Buat Pertanyaan" ada di tab Modul, tetapi Webinar belum punya tempat menampilkan pertanyaan.
