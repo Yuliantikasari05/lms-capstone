@@ -5,7 +5,7 @@ import { ROLE_CONFIG, ROLE_SLUGS, type ExtraRoute, type NavItem } from './config
 import { RoleShell } from './layouts/RoleShell'
 import { adminPages } from './pages/admin'
 import { karyawanPages } from './pages/karyawan'
-import { lembagaPages } from './pages/lembaga'
+import { lembagaPages, lembagaRoutes } from './pages/lembaga'
 import LoginPage from './pages/LoginPage'
 import { mentorPages } from './pages/mentor'
 import NotFoundPage from './pages/shared/NotFoundPage'
@@ -24,6 +24,7 @@ const ROLE_PAGES: Record<RoleSlug, Record<string, ComponentType>> = {
 
 /** Halaman di luar menu (misalnya detail), didaftarkan di index.ts folder role. */
 const ROLE_EXTRA_ROUTES: Partial<Record<RoleSlug, ExtraRoute[]>> = {
+  lembaga: lembagaRoutes,
   siswa: siswaRoutes,
 }
 

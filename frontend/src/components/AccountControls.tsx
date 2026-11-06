@@ -1,5 +1,6 @@
-import { Bell, ChevronDown, LogOut } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, UserRound } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ROLE_CONFIG } from '../config/navigation'
 import { initials } from '../lib/format'
@@ -94,6 +95,17 @@ export function UserMenu({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
             <p className="truncate text-xs text-slate-500">{user.email}</p>
             <p className="mt-1 text-xs font-medium text-brand-700">{roleLabel}</p>
           </div>
+          {user.primary_role === 'lembaga' && (
+            <Link
+              to="/lembaga/profile"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50"
+            >
+              <UserRound className="h-4 w-4" aria-hidden />
+              Lihat Profil
+            </Link>
+          )}
           <button
             type="button"
             role="menuitem"
