@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { Bell, ChevronDown, LogOut, UserRound } from 'lucide-react'
-=======
 import { Bell, ChevronDown, CreditCard, LogOut, UserCircle } from 'lucide-react'
->>>>>>> 7e44b01a3b57895ac2293c5e0580e40033fe1f6f
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -109,31 +105,18 @@ export function UserMenu({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
             <p className="truncate text-xs text-slate-500">{user.email}</p>
             <p className="mt-1 text-xs font-medium text-brand-700">{roleLabel}</p>
           </div>
-<<<<<<< HEAD
-          {user.primary_role === 'lembaga' && (
-            <Link
-              to="/lembaga/profile"
-=======
           {links.map(({ label, to, Icon }) => (
             <Link
               key={to}
               to={to}
->>>>>>> 7e44b01a3b57895ac2293c5e0580e40033fe1f6f
               role="menuitem"
               onClick={() => setOpen(false)}
               className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50"
             >
-<<<<<<< HEAD
-              <UserRound className="h-4 w-4" aria-hidden />
-              Lihat Profil
-            </Link>
-          )}
-=======
               <Icon className="h-4 w-4" aria-hidden />
               {label}
             </Link>
           ))}
->>>>>>> 7e44b01a3b57895ac2293c5e0580e40033fe1f6f
           <button
             type="button"
             role="menuitem"
