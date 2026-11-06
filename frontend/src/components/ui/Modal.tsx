@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-const SIZE = { sm: 'sm:max-w-md', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' } as const
+const SIZE = { sm: 'sm:max-w-md', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: 'sm:max-w-xl' } as const
 
 interface ModalProps {
   open: boolean
@@ -15,6 +15,8 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   size?: keyof typeof SIZE
+  centered?: boolean
+  titleClassName?: string
   /** Set false saat sedang menyimpan agar dialog tidak tertutup di tengah proses. */
   dismissible?: boolean
 }
@@ -24,7 +26,18 @@ interface ModalProps {
  * fokus dikembalikan ke tombol pemicu saat ditutup. Elemen dengan atribut data-autofocus
  * akan mendapat fokus pertama.
  */
-export function Modal({ open, title, description, onClose, children, footer, size = 'md', dismissible = true }: ModalProps) {
+export function Modal({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+  footer,
+  size = 'md',
+  centered = false,
+  titleClassName = 'text-ink-900',
+  dismissible = true,
+}: ModalProps) {
   const titleId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
@@ -78,19 +91,29 @@ export function Modal({ open, title, description, onClose, children, footer, siz
   if (!open) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
-      <div className="absolute inset-0 bg-ink-950/50" onClick={() => dismissible && onClose()} aria-hidden />
+    <div
+      className={`fixed inset-0 z-50 flex justify-center p-4 ${
+        centered ? 'items-center' : 'items-end sm:items-center'
+      }`}
+    >
+      <div
+        className={`absolute inset-0 ${centered ? 'bg-black/50 backdrop-blur-sm' : 'bg-ink-950/50'}`}
+        onClick={() => dismissible && onClose()}
+        aria-hidden
+      />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`relative flex max-h-[90vh] w-full flex-col rounded-t-xl bg-white shadow-xl outline-none sm:rounded-xl ${SIZE[size]}`}
+        className={`relative flex max-h-[90vh] w-full flex-col bg-white shadow-xl outline-none ${
+          centered ? 'rounded-2xl' : 'rounded-t-xl sm:rounded-xl'
+        } ${SIZE[size]}`}
       >
         <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 id={titleId} className="text-base font-semibold text-ink-900">
+            <h2 id={titleId} className={`text-base font-semibold ${titleClassName}`}>
               {title}
             </h2>
             {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
