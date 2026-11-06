@@ -1,4 +1,4 @@
-import { BookOpen, ChevronRight, Flame, Trophy, Video } from 'lucide-react'
+import { BarChart3, BookOpen, CalendarDays, ChevronRight, Flame, Gift, Target, Trophy, Video, type LucideIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 
@@ -8,7 +8,7 @@ import { useAuth } from '../../auth/AuthContext'
  */
 const MATERIAL_PROGRESS = { course: 'Bahasa Indonesia Lanjutan', modulesDone: 2, modulesTotal: 3 }
 const STREAK = { days: 1, message: 'Luar biasa! Jangan biarkan apinya padam.' }
-const LEVEL = { name: 'Silver Elite', xpToNext: 1250, nextLevel: 'Expert' }
+const LEVEL = { name: 'Silver', xpToNext: 1250, nextLevel: 'Expert' }
 const UPCOMING_SESSIONS = [
   { id: 1, subject: 'Bahasa Indonesia', mentor: 'Fauzan S. Pd', start: '02.00', end: '03.30', live: true },
 ]
@@ -17,6 +17,15 @@ const LEADERBOARD = [
   { rank: 2, name: 'Badrun Napis', xp: 9999 },
   { rank: 3, name: 'Badrun Napis', xp: 9999 },
   { rank: 4, name: 'Badrun Napis', xp: 9999 },
+]
+
+/** Kartu menu di atas dashboard, pengganti menu navigasi. */
+const SHORTCUTS: { label: string; to: string; Icon: LucideIcon; iconClass: string }[] = [
+  { label: 'Materi', to: '/siswa/materials', Icon: BookOpen, iconClass: 'bg-blue-50 text-blue-600' },
+  { label: 'Jadwal', to: '/siswa/schedule', Icon: CalendarDays, iconClass: 'bg-purple-50 text-purple-500' },
+  { label: 'Papan Peringkat', to: '/siswa/leaderboard', Icon: BarChart3, iconClass: 'bg-orange-50 text-amber-500' },
+  { label: 'Tugas', to: '/siswa/assignments', Icon: Target, iconClass: 'bg-indigo-100 text-indigo-600' },
+  { label: 'Laporan', to: '/siswa/reports', Icon: Gift, iconClass: 'bg-pink-50 text-rose-600' },
 ]
 
 /** Warna peringkat: emas, perak, perunggu, lalu abu-abu muda. */
@@ -33,6 +42,21 @@ export default function SiswaDashboard() {
         <h1 className="text-4xl font-bold text-slate-900">Halo, {firstName}! 👋</h1>
         <p className="mt-2 text-base text-slate-700">Senang Melihatmu Kembali, mari lanjutkan progres belajarmu</p>
       </div>
+
+      <nav aria-label="Menu Siswa" className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        {SHORTCUTS.map(({ label, to, Icon, iconClass }) => (
+          <Link
+            key={to}
+            to={to}
+            className="flex items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-6 py-3 text-slate-900 transition-colors hover:border-slate-300"
+          >
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+              <Icon className="h-6 w-6" aria-hidden />
+            </span>
+            {label}
+          </Link>
+        ))}
+      </nav>
 
       <div className="grid gap-6 md:grid-cols-3">
         <Link

@@ -1,8 +1,12 @@
+<<<<<<< HEAD
 import { Bell, ChevronDown, LogOut, UserRound } from 'lucide-react'
+=======
+import { Bell, ChevronDown, CreditCard, LogOut, UserCircle } from 'lucide-react'
+>>>>>>> 7e44b01a3b57895ac2293c5e0580e40033fe1f6f
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { ROLE_CONFIG } from '../config/navigation'
+import { ROLE_CONFIG, roleHome } from '../config/navigation'
 import { initials } from '../lib/format'
 
 /** Menutup popover saat klik di luar atau menekan Escape. */
@@ -61,7 +65,17 @@ export function UserMenu({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
 
   if (!user) return null
 
-  const roleLabel = user.primary_role ? ROLE_CONFIG[user.primary_role].label : 'Tanpa role'
+  const role = user.primary_role
+  const roleLabel = role ? ROLE_CONFIG[role].label : 'Tanpa role'
+  // Profil untuk semua role; Pembayaran hanya untuk role yang punya halamannya.
+  const links = role
+    ? [
+        { label: 'Profil', to: `${roleHome(role)}/profile`, Icon: UserCircle },
+        ...(ROLE_CONFIG[role].items.some((item) => item.key === 'payments')
+          ? [{ label: 'Pembayaran', to: `${roleHome(role)}/payments`, Icon: CreditCard }]
+          : []),
+      ]
+    : []
   const text = tone === 'dark' ? 'text-white hover:bg-white/10' : 'text-slate-700 hover:bg-slate-100'
   const sub = tone === 'dark' ? 'text-white/60' : 'text-slate-500'
 
@@ -95,17 +109,31 @@ export function UserMenu({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
             <p className="truncate text-xs text-slate-500">{user.email}</p>
             <p className="mt-1 text-xs font-medium text-brand-700">{roleLabel}</p>
           </div>
+<<<<<<< HEAD
           {user.primary_role === 'lembaga' && (
             <Link
               to="/lembaga/profile"
+=======
+          {links.map(({ label, to, Icon }) => (
+            <Link
+              key={to}
+              to={to}
+>>>>>>> 7e44b01a3b57895ac2293c5e0580e40033fe1f6f
               role="menuitem"
               onClick={() => setOpen(false)}
               className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50"
             >
+<<<<<<< HEAD
               <UserRound className="h-4 w-4" aria-hidden />
               Lihat Profil
             </Link>
           )}
+=======
+              <Icon className="h-4 w-4" aria-hidden />
+              {label}
+            </Link>
+          ))}
+>>>>>>> 7e44b01a3b57895ac2293c5e0580e40033fe1f6f
           <button
             type="button"
             role="menuitem"
