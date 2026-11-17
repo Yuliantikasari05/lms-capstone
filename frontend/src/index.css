@@ -22,3 +22,16 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+.mentor-assignment-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 1fr);
+  align-items: start;
+  gap: 1.25rem;
+}
+
+@media (max-width: 767px) {
+  .mentor-assignment-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -7,7 +7,7 @@ import { adminPages, adminRoutes } from './pages/admin'
 import { karyawanPages, karyawanRoutes } from './pages/karyawan'
 import { lembagaPages, lembagaRoutes } from './pages/lembaga'
 import LoginPage from './pages/LoginPage'
-import { mentorPages } from './pages/mentor'
+import { mentorPages, mentorRoutes } from './pages/mentor'
 import NotFoundPage from './pages/shared/NotFoundPage'
 import PlaceholderPage from './pages/shared/PlaceholderPage'
 import { siswaPages, siswaRoutes } from './pages/siswa'
@@ -25,6 +25,7 @@ const ROLE_PAGES: Record<RoleSlug, Record<string, ComponentType>> = {
 /** Halaman di luar menu (misalnya detail), didaftarkan di index.ts folder role. */
 const ROLE_EXTRA_ROUTES: Partial<Record<RoleSlug, ExtraRoute[]>> = {
   admin: adminRoutes,
+  mentor: mentorRoutes,
   lembaga: lembagaRoutes,
   siswa: siswaRoutes,
   karyawan: karyawanRoutes,

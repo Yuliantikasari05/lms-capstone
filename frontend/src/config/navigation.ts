@@ -66,13 +66,11 @@ export const ROLE_CONFIG: Record<RoleSlug, RoleConfig> = {
     label: 'Mentor',
     items: [
       { key: 'overview', label: 'Ringkasan', path: '', icon: LayoutDashboard },
-      { key: 'courses', label: 'Kursus Saya', path: 'courses', icon: BookOpen },
+      { key: 'courses', label: 'Kursus Saya', path: 'courses', icon: BookOpen, nested: true },
       { key: 'users', label: 'User', path: 'users', icon: Users },
       { key: 'assignments', label: 'Tugas', path: 'assignments', icon: ClipboardList },
       { key: 'curriculum', label: 'Kurikulum', path: 'curriculum', icon: Layers },
       { key: 'schedule', label: 'Jadwal Bimbingan', path: 'schedule', icon: CalendarClock },
-      { key: 'notifications', label: 'Notifikasi', path: 'notifications', icon: Bell },
-      { key: 'profile', label: 'Profil', path: 'profile', icon: UserCircle },
     ],
   },
   siswa: {
