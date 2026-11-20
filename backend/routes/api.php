@@ -36,6 +36,12 @@ Route::prefix('v1')->group(function () {
 
             // Modul kursus (kursus, modul, materi, sesi, peserta): lihat routes/api/courses.php
             require __DIR__.'/api/courses.php';
+
+            // Manajemen Kupon Admin: lihat routes/api/coupons.php
+            require __DIR__.'/api/coupons.php';
+
+            // Gamifikasi Admin (peringkat, XP, level): lihat routes/api/gamification.php
+            require __DIR__.'/api/gamification.php';
         });
     });
 });

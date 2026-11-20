@@ -24,6 +24,12 @@ class RolePermissionSeeder extends Seeder
         'courses.assign_mentor' => 'Menetapkan atau mengganti Mentor kursus',
         'content.manage' => 'Mengelola modul, materi, dan sesi kursus',
         'enrollments.manage' => 'Mendaftarkan dan mencabut peserta kursus',
+        'coupons.view' => 'Melihat daftar kupon',
+        'coupons.create' => 'Membuat kupon',
+        'coupons.update' => 'Mengubah kupon',
+        'coupons.delete' => 'Menghapus kupon',
+        'gamification.view' => 'Melihat papan peringkat, ringkasan XP, dan level',
+        'gamification.manage' => 'Mengatur level dan mengoreksi XP Siswa',
         'roles.view' => 'Melihat daftar role',
         'dashboard.admin' => 'Mengakses dashboard Admin',
         'dashboard.mentor' => 'Mengakses dashboard Mentor',
@@ -43,7 +49,9 @@ class RolePermissionSeeder extends Seeder
     /** Prinsip least privilege: tiap role hanya mendapat permission yang dibutuhkan. */
     public const MATRIX = [
         Role::ADMIN => ['users.view', 'users.create', 'users.update', 'users.delete', 'users.export', 'users.reset_password', 'audit.view', 'roles.view', 'dashboard.admin',
-            'courses.view', 'courses.create', 'courses.update', 'courses.delete', 'courses.assign_mentor', 'content.manage', 'enrollments.manage'],
+            'courses.view', 'courses.create', 'courses.update', 'courses.delete', 'courses.assign_mentor', 'content.manage', 'enrollments.manage',
+            'coupons.view', 'coupons.create', 'coupons.update', 'coupons.delete',
+            'gamification.view', 'gamification.manage'],
         Role::MENTOR => ['dashboard.mentor'],
         Role::SISWA => ['dashboard.siswa'],
         Role::KARYAWAN => ['dashboard.karyawan'],
