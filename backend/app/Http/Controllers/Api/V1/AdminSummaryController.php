@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Course;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -35,8 +36,7 @@ class AdminSummaryController extends Controller
             'users_active' => User::where('status', User::STATUS_ACTIVE)->count(),
             'users_trashed' => User::onlyTrashed()->count(),
             'mentors_total' => $byRole->firstWhere('slug', Role::MENTOR)['users_count'] ?? 0,
-            // Modul kursus belum ada pada tahap ini.
-            'courses_total' => null,
+            'courses_total' => Course::count(),
             'users_by_role' => $byRole,
             'recent_logins' => $recentLogins,
         ]]);
