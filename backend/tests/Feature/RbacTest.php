@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Course;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -159,18 +160,20 @@ class RbacTest extends TestCase
         $this->assertNotSoftDeleted($admin);
     }
 
-    public function test_admin_summary_contains_real_counts_and_null_courses(): void
+    public function test_admin_summary_contains_real_course_count(): void
     {
         $admin = $this->userWithRole(Role::ADMIN);
         $this->userWithRole(Role::MENTOR);
         $this->userWithRole(Role::MENTOR);
+        Course::factory()->count(2)->create();
+        Course::factory()->create()->delete();
 
         $this->actingAs($admin, 'web')
             ->getJson('/api/v1/admin/summary')
             ->assertOk()
             ->assertJsonPath('data.users_total', 3)
             ->assertJsonPath('data.mentors_total', 2)
-            ->assertJsonPath('data.courses_total', null);
+            ->assertJsonPath('data.courses_total', 2);
     }
 
     public function test_user_model_permission_helpers(): void
