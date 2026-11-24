@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uji API Kupon dan Gamifikasi (sementara)</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --tx:#1b1f24; --mut:#6b7280; --bd:#dfe3e8; --pri:#2563eb; --ok:#15803d; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171b; --card:#1d2127; --tx:#e8eaed; --mut:#9aa3af; --bd:#303640; --pri:#60a5fa; --ok:#4ade80; --bad:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--tx); }
+  header { padding:12px 20px; background:var(--card); border-bottom:1px solid var(--bd); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  main { max-width:1100px; margin:16px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:14px; margin-bottom:14px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:12px; color:var(--mut); gap:2px; }
+  input, select, button { font:inherit; padding:6px 9px; border:1px solid var(--bd); border-radius:6px; background:var(--bg); color:var(--tx); }
+  button { background:var(--pri); color:#fff; border-color:var(--pri); cursor:pointer; }
+  button.sec { background:transparent; color:var(--pri); }
+  button.del { background:transparent; color:var(--bad); border-color:var(--bad); }
+  button:disabled { opacity:.5; cursor:default; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { background:transparent; color:var(--tx); border-color:var(--bd); }
+  .tabs button.on { background:var(--pri); color:#fff; border-color:var(--pri); }
+  .stats { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .stat { flex:1; min-width:130px; background:var(--bg); border:1px solid var(--bd); border-radius:8px; padding:8px 12px; }
+  .stat b { display:block; font-size:20px; }
+  .stat span { color:var(--mut); font-size:12px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { font-size:12px; color:var(--mut); }
+  .pill { padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid var(--bd); }
+  .pill.active { color:var(--ok); border-color:var(--ok); }
+  .pill.inactive, .pill.expired, .pill.exhausted { color:var(--bad); border-color:var(--bad); }
+  #msg { padding:8px 12px; border-radius:6px; margin-bottom:12px; display:none; white-space:pre-wrap; }
+  #msg.ok { display:block; background:rgba(21,128,61,.12); color:var(--ok); }
+  #msg.err { display:block; background:rgba(185,28,28,.12); color:var(--bad); }
+  .mut { color:var(--mut); }
+  .hide { display:none; }
+  .two { display:grid; grid-template-columns: 240px 1fr; gap:12px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+  .rolebtn { display:block; width:100%; text-align:left; margin-bottom:6px; background:transparent; color:var(--tx); border-color:var(--bd); }
+  .rolebtn.on { border-color:var(--pri); color:var(--pri); }
+  .mod { margin-top:12px; font-weight:600; background:var(--bg); padding:4px 8px; border-radius:6px; }
+  .lock { color:var(--mut); font-size:12px; }
+  .bar { height:8px; border-radius:4px; background:var(--bd); overflow:hidden; } .bar i { display:block; height:100%; background:var(--pri); }
+  .cols { display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+  pre { background:var(--bg); border:1px solid var(--bd); border-radius:6px; padding:8px; overflow:auto; max-height:260px; margin:6px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Uji API Kupon dan Gamifikasi <span class="mut">(halaman sementara, jangan di-commit)</span></h1>
+  <span id="who" class="mut">Belum login</span>
+  <button id="btnLogout" class="sec hide">Keluar</button>
+</header>
+
+<main>
+  <div id="msg"></div>
+
+  <div id="loginBox" class="card">
+    <div class="row">
+      <label>Alamat backend <input id="base" value="http://localhost:8000" size="24"></label>
+      <label>Email Admin <input id="email" type="email" size="26" autocomplete="username"></label>
+      <label>Password <input id="password" type="password" size="22" autocomplete="current-password"></label>
+      <button id="btnLogin">Masuk</button>
+    </div>
+    <p class="mut" style="margin:8px 0 0">Buka halaman ini lewat <code>http://localhost:5173/uji-api.html</code> (bukan dari file langsung), dan jalankan backend serta <code>npm run dev</code>.</p>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="tabs">
+      <button data-tab="kupon" class="on">Manajemen Kupon</button>
+      <button data-tab="gami">Gamifikasi</button>
+      <button data-tab="lembaga">Lembaga Bimbingan</button>
+      <button data-tab="atur">Pengaturan</button>
+    </div>
+
+    <!-- ===================== KUPON ===================== -->
+    <section id="tab-kupon">
+      <div class="card">
+        <div class="stats" id="cStats"></div>
+        <div class="row">
+          <label>Cari kode/nama <input id="cQ" placeholder="mis. HEMAT"></label>
+          <label>Status
+            <select id="cStatus"><option value="">Semua</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="expired">Kedaluwarsa</option><option value="exhausted">Kuota habis</option></select>
+          </label>
+          <label>Kursus
+            <select id="cCourseFilter"><option value="">Semua kursus</option></select>
+          </label>
+          <button id="cReload">Muat</button>
+        </div>
+      </div>
+      <div class="card" style="overflow:auto">
+        <table>
+          <thead><tr><th>Kode</th><th>Nama</th><th>Diskon</th><th>Penggunaan</th><th>Kursus</th><th>Kedaluwarsa</th><th>Status</th><th>Aksi</th></tr></thead>
+          <tbody id="cBody"></tbody>
+        </table>
+        <div class="row" style="margin-top:8px"><button class="sec" id="cPrev">Sebelumnya</button><span id="cPage" class="mut"></span><button class="sec" id="cNext">Berikutnya</button></div>
+      </div>
+      <div class="card">
+        <b>Tambah kupon</b>
+        <div class="row" style="margin-top:8px">
+          <label>Kode <input id="nCode" placeholder="HEMAT50" size="12"></label>
+          <label>Nama <input id="nName" size="18"></label>
+          <label>Tipe <select id="nType"><option value="percentage">Persentase (1-100)</option><option value="fixed">Nominal (Rp)</option></select></label>
+          <label>Nilai <input id="nValue" type="number" min="1" size="8" style="width:100px"></label>
+          <label>Kuota (kosong=bebas) <input id="nLimit" type="number" min="1" style="width:110px"></label>
+          <label>Kursus <select id="nCourse"><option value="">Semua kursus</option></select></label>
+          <label>Kedaluwarsa <input id="nExp" type="datetime-local"></label>
+          <label>Aktif <select id="nActive"><option value="1">Ya</option><option value="0">Tidak</option></select></label>
+          <button id="nSave">Simpan</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== GAMIFIKASI ===================== -->
+    <section id="tab-gami" class="hide">
+      <div class="card">
+        <div class="stats" id="gStats"></div>
+        <div class="row">
+          <label>Cari nama/email <input id="gQ"></label>
+          <button id="gReload">Muat</button>
+        </div>
+      </div>
+      <div class="card" style="overflow:auto">
+        <b>Papan peringkat</b>
+        <table>
+          <thead><tr><th>#</th><th>Siswa</th><th>XP</th><th>Level</th><th>Aksi</th></tr></thead>
+          <tbody id="gBody"></tbody>
+        </table>
+        <div class="row" style="margin-top:8px"><button class="sec" id="gPrev">Sebelumnya</button><span id="gPage" class="mut"></span><button class="sec" id="gNext">Berikutnya</button></div>
+        <div id="hist" class="hide"></div>
+      </div>
+      <div class="card">
+        <b>Level</b> <span class="mut">(diatur Admin, tanpa nilai bawaan)</span>
+        <table style="margin-top:6px"><thead><tr><th>Nama</th><th>XP minimal</th><th></th></tr></thead><tbody id="lBody"></tbody></table>
+        <div class="row" style="margin-top:8px">
+          <label>Nama level <input id="lName"></label>
+          <label>XP minimal <input id="lMin" type="number" min="0" style="width:110px"></label>
+          <button id="lSave">Tambah level</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== LEMBAGA BIMBINGAN ===================== -->
+    <section id="tab-lembaga" class="hide">
+      <div id="lList">
+        <div class="card">
+          <div class="stats" id="lStats"></div>
+          <div class="row">
+            <label>Cari nama/email/telepon <input id="lQ"></label>
+            <label>Status <select id="lStatus"><option value="">Semua</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="suspended">Ditangguhkan</option></select></label>
+            <button id="lReload">Muat</button>
+          </div>
+        </div>
+        <div class="card" style="overflow:auto">
+          <table>
+            <thead><tr><th>Lembaga</th><th>Status</th><th>Bagi hasil</th><th>Program</th><th>Saldo</th><th>Aksi</th></tr></thead>
+            <tbody id="liBody"></tbody>
+          </table>
+          <div class="row" style="margin-top:8px"><button class="sec" id="liPrev">Sebelumnya</button><span id="liPage" class="mut"></span><button class="sec" id="liNext">Berikutnya</button></div>
+        </div>
+        <div class="card">
+          <b>Tambah Lembaga Bimbingan</b> <span class="mut">(akun dibuat otomatis dengan kata sandi sementara)</span>
+          <div class="row" style="margin-top:8px">
+            <label>Nama lembaga <input id="iName" size="20"></label>
+            <label>Email akun <input id="iEmail" type="email" size="22"></label>
+            <label>Bagi hasil lembaga (%) <input id="iShare" type="number" min="1" max="100" style="width:100px"></label>
+            <label>Bank <input id="iBank" size="8"></label>
+            <label>Pemilik rekening <input id="iHolder" size="14"></label>
+            <label>No. rekening <input id="iNumber" size="14"></label>
+            <button id="iSave">Simpan</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="lDetail" class="hide">
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <div><b id="dName"></b> <span id="dStatus" class="pill"></span><br><span id="dMeta" class="mut"></span></div>
+            <div class="row">
+              <label>Bagi hasil (%) <input id="dShare" type="number" min="1" max="100" style="width:90px"></label>
+              <button class="sec" id="dShareSave">Simpan bagi hasil</button>
+              <button class="sec" id="dBack">Kembali ke daftar</button>
+            </div>
+          </div>
+          <div class="tabs" id="dPeriods" style="margin:10px 0 0"></div>
+        </div>
+        <div class="card"><div class="stats" id="dCards"></div></div>
+        <div class="cols">
+          <div class="card"><b>Pendapatan dan bagi hasil</b> <span class="mut" id="dChartInfo"></span><div id="dChart" style="overflow:auto"></div></div>
+          <div class="card"><b>Keuangan dan pencairan</b><div id="dFinance"></div>
+            <div class="row" style="margin-top:8px"><label>Jumlah (kosong = seluruh saldo) <input id="pAmount" type="number" min="1" style="width:150px"></label><button id="pRequest">Proses Pencairan Dana</button></div>
+          </div>
+          <div class="card"><b>Pembagian pendapatan</b><div id="dSplit"></div></div>
+          <div class="card"><b>Top konten terlaris</b><div id="dTop"></div></div>
+          <div class="card"><b>Perkembangan siswa</b><div id="dStudents"></div></div>
+          <div class="card"><b>Voucher aktif</b><div id="dVouchers"></div></div>
+        </div>
+        <div class="card" style="overflow:auto"><b>Riwayat pencairan dana</b>
+          <table><thead><tr><th>Kode</th><th>Diajukan</th><th>Jumlah</th><th>Rekening tujuan</th><th>Status</th><th>Diproses</th><th>Aksi</th></tr></thead><tbody id="pBody"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PENGATURAN ===================== -->
+    <section id="tab-atur" class="hide">
+      <div class="card"><div class="stats" id="rStats"></div></div>
+      <div class="two">
+        <div class="card"><b>Daftar role</b><div id="rList" style="margin-top:8px"></div>
+          <div style="margin-top:10px"><label>Role baru <input id="rNewName" placeholder="mis. Staf Kupon"></label><button id="rNew" style="margin-top:6px">+ Buat Role Baru</button></div>
+        </div>
+        <div class="card" id="rDetail"><span class="mut">Pilih role di sebelah kiri.</span></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const origin = () => $('base').value.trim().replace(/\/+$/, '');
+const state = { cPage: 1, gPage: 1, cLast: 1, gLast: 1, liPage: 1, liLast: 1, lLoaded: false, rLoaded: false, inst: null, period: '3m', role: null };
+const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+function say(text, ok, sticky) { const m = $('msg'); m.className = ok ? 'ok' : 'err'; m.textContent = text; if (ok && !sticky) setTimeout(() => { if (m.textContent === text) m.className = ''; }, 4000); }
+function xsrf() { const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/); return m ? decodeURIComponent(m[1]) : ''; }
+
+async function api(method, path, body) {
+  const opt = { method, credentials: 'include', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } };
+  if (method !== 'GET') { opt.headers['X-XSRF-TOKEN'] = xsrf(); }
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const res = await fetch(origin() + '/api/v1' + path, opt);
+  let json = null; try { json = await res.json(); } catch (e) { /* kosong */ }
+  if (!res.ok) {
+    const errs = json && json.errors ? '\n' + Object.entries(json.errors).map(([k, v]) => k + ': ' + v.join(' ')).join('\n') : '';
+    const err = new Error('[' + res.status + '] ' + ((json && json.message) || res.statusText) + errs); err.status = res.status; throw err;
+  }
+  return json;
+}
+const qs = (o) => { const p = new URLSearchParams(); Object.entries(o).forEach(([k, v]) => { if (v !== '' && v != null) p.set(k, v); }); const s = p.toString(); return s ? '?' + s : ''; };
+const run = async (fn) => { try { await fn(); } catch (e) { say(e.message, false); } };
+
+/* ---------- login ---------- */
+async function csrf() { await fetch(origin() + '/sanctum/csrf-cookie', { credentials: 'include' }); }
+async function afterLogin() {
+  const me = await api('GET', '/auth/me');
+  const u = me.data || me.user || me;
+  $('who').textContent = 'Masuk sebagai ' + (u.name || '?') + ' (' + (u.email || '') + ')';
+  $('loginBox').classList.add('hide'); $('app').classList.remove('hide'); $('btnLogout').classList.remove('hide');
+  await loadCourses(); await loadCoupons(); await loadGami();
+}
+$('btnLogin').onclick = () => run(async () => {
+  await csrf();
+  await api('POST', '/auth/login', { email: $('email').value.trim(), password: $('password').value });
+  await afterLogin(); say('Berhasil masuk.', true);
+});
+$('btnLogout').onclick = () => run(async () => {
+  await api('POST', '/auth/logout'); location.reload();
+});
+
+/* ---------- tab ---------- */
+document.querySelectorAll('.tabs button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  ['kupon', 'gami', 'lembaga', 'atur'].forEach((t) => $('tab-' + t).classList.toggle('hide', b.dataset.tab !== t));
+  if (b.dataset.tab === 'lembaga' && !state.lLoaded) run(loadInstitutions);
+  if (b.dataset.tab === 'atur' && !state.rLoaded) run(loadRoles);
+});
+
+/* ---------- kupon ---------- */
+const stat = (label, val) => '<div class="stat"><b>' + esc(val) + '</b><span>' + esc(label) + '</span></div>';
+async function loadCourses() {
+  try {
+    const r = await api('GET', '/courses?per_page=100');
+    const opts = (r.data || []).map((c) => '<option value="' + esc(c.id) + '">' + esc(c.title || c.name || ('Kursus ' + c.id)) + '</option>').join('');
+    $('cCourseFilter').innerHTML = '<option value="">Semua kursus</option>' + opts;
+    $('nCourse').innerHTML = '<option value="">Semua kursus</option>' + opts;
+  } catch (e) { /* daftar kursus opsional */ }
+}
+async function loadCoupons() {
+  const r = await api('GET', '/coupons' + qs({ q: $('cQ').value.trim(), status: $('cStatus').value, course_id: $('cCourseFilter').value, per_page: 10, page: state.cPage }));
+  const s = r.summary || {};
+  $('cStats').innerHTML = stat('Total Kupon', s.total) + stat('Kupon Aktif', s.active) + stat('Total Penggunaan', s.total_redemptions);
+  $('cBody').innerHTML = (r.data || []).map((c) =>
+    '<tr><td><b>' + esc(c.code) + '</b></td><td>' + esc(c.name || '-') + '</td><td>' + esc(c.discount_label) + '</td><td>' + esc(c.usage_label) +
+    '</td><td>' + esc(c.course ? c.course.title || c.course.id : 'Semua') + '</td><td>' + esc(c.expires_at ? c.expires_at.slice(0, 10) : '-') +
+    '</td><td><span class="pill ' + esc(c.status) + '">' + esc(c.status_label) + '</span></td><td>' +
+    '<button class="sec" data-act="toggle" data-id="' + c.id + '" data-active="' + (c.is_active ? 1 : 0) + '">' + (c.is_active ? 'Nonaktifkan' : 'Aktifkan') + '</button> ' +
+    '<button class="del" data-act="del" data-id="' + c.id + '">Hapus</button></td></tr>'
+  ).join('') || '<tr><td colspan="8" class="mut">Belum ada data.</td></tr>';
+  const m = r.meta || {}; state.cLast = m.last_page || 1;
+  $('cPage').textContent = 'Halaman ' + (m.current_page || 1) + ' dari ' + state.cLast + ' (' + (m.total || 0) + ' kupon)';
+}
+$('cBody').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; run(async () => {
+  if (b.dataset.act === 'toggle') { await api('PATCH', '/coupons/' + b.dataset.id, { is_active: b.dataset.active !== '1' }); say('Status kupon diubah.', true); }
+  if (b.dataset.act === 'del') { if (!confirm('Hapus kupon ini?')) return; const r = await api('DELETE', '/coupons/' + b.dataset.id); say(r.message || 'Dihapus.', true); }
+  await loadCoupons();
+}); };
+$('cReload').onclick = () => run(() => { state.cPage = 1; return loadCoupons(); });
+$('cPrev').onclick = () => run(() => { if (state.cPage > 1) { state.cPage--; return loadCoupons(); } });
+$('cNext').onclick = () => run(() => { if (state.cPage < state.cLast) { state.cPage++; return loadCoupons(); } });
+$('nSave').onclick = () => run(async () => {
+  const body = { code: $('nCode').value, name: $('nName').value || null, discount_type: $('nType').value, discount_value: $('nValue').value === '' ? null : Number($('nValue').value),
+    usage_limit: $('nLimit').value === '' ? null : Number($('nLimit').value), course_id: $('nCourse').value === '' ? null : Number($('nCourse').value),
+    expires_at: $('nExp').value ? new Date($('nExp').value).toISOString() : null, is_active: $('nActive').value === '1' };
+  const r = await api('POST', '/coupons', body); say(r.message || 'Dibuat.', true);
+  ['nCode', 'nName', 'nValue', 'nLimit', 'nExp'].forEach((i) => $(i).value = ''); state.cPage = 1; await loadCoupons();
+});
+
+/* ---------- gamifikasi ---------- */
+async function loadGami() { await Promise.all([loadBoard(), loadSummary(), loadLevels()]); }
+async function loadSummary() {
+  const d = (await api('GET', '/gamification/summary')).data || {};
+  $('gStats').innerHTML = stat('Jumlah Siswa', d.students_count) + stat('Rata-rata XP', d.average_xp) + stat('XP Tertinggi', d.highest_xp) + stat('Total XP', d.total_xp) + stat('Jumlah Level', d.levels_count);
+}
+async function loadBoard() {
+  const r = await api('GET', '/gamification/leaderboard' + qs({ q: $('gQ').value.trim(), per_page: 10, page: state.gPage }));
+  $('gBody').innerHTML = (r.data || []).map((x) =>
+    '<tr><td>' + esc(x.rank) + '</td><td>' + esc(x.user.name) + '<br><span class="mut">' + esc(x.user.email) + '</span></td><td><b>' + esc(x.xp) + '</b></td><td>' + esc(x.level ? x.level.name : '-') +
+    '</td><td><button class="sec" data-act="hist" data-id="' + x.user.id + '">Riwayat</button> <button class="sec" data-act="adj" data-id="' + x.user.id + '">Koreksi XP</button> ' +
+    '<button class="del" data-act="reset" data-id="' + x.user.id + '">Reset</button></td></tr>'
+  ).join('') || '<tr><td colspan="5" class="mut">Belum ada Siswa.</td></tr>';
+  const m = r.meta || {}; state.gLast = m.last_page || 1;
+  $('gPage').textContent = 'Halaman ' + (m.current_page || 1) + ' dari ' + state.gLast + ' (' + (m.total || 0) + ' Siswa)';
+}
+async function loadLevels() {
+  const r = await api('GET', '/gamification/levels');
+  $('lBody').innerHTML = (r.data || []).map((l) => '<tr><td>' + esc(l.name) + '</td><td>' + esc(l.min_xp) + '</td><td><button class="del" data-lid="' + l.id + '">Hapus</button></td></tr>').join('') || '<tr><td colspan="3" class="mut">Belum ada level.</td></tr>';
+}
+async function showHist(id) {
+  const r = await api('GET', '/gamification/users/' + id + '/xp');
+  const rows = (r.data || []).map((t) => '<tr><td>' + esc((t.created_at || '').slice(0, 16).replace('T', ' ')) + '</td><td>' + esc(t.amount > 0 ? '+' + t.amount : t.amount) + '</td><td>' + esc(t.source_label) + '</td><td>' + esc(t.reason || '') + '</td></tr>').join('');
+  $('hist').className = ''; $('hist').innerHTML = '<p><b>Riwayat XP</b> (XP sekarang: ' + esc(r.xp) + ', level: ' + esc(r.level ? r.level.name : '-') + ')</p><table><thead><tr><th>Waktu</th><th>XP</th><th>Sumber</th><th>Alasan</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" class="mut">Belum ada riwayat.</td></tr>') + '</tbody></table>';
+}
+$('gBody').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; run(async () => {
+  const id = b.dataset.id;
+  if (b.dataset.act === 'hist') { await showHist(id); return; }
+  if (b.dataset.act === 'adj') {
+    const amount = prompt('Jumlah XP (positif menambah, negatif mengurangi):'); if (amount === null) return;
+    const reason = prompt('Alasan (minimal 3 karakter):'); if (reason === null) return;
+    const r = await api('POST', '/gamification/users/' + id + '/xp-adjustments', { amount: Number(amount), reason }); say((r.message || 'Berhasil.') + ' XP sekarang: ' + r.xp, true);
+  }
+  if (b.dataset.act === 'reset') {
+    const reason = prompt('Alasan reset XP ke 0:'); if (reason === null) return;
+    const r = await api('POST', '/gamification/users/' + id + '/xp-reset', { reason }); say(r.message || 'Direset.', true);
+  }
+  await loadGami(); if (!$('hist').classList.contains('hide')) await showHist(id);
+}); };
+$('gReload').onclick = () => run(() => { state.gPage = 1; return loadBoard(); });
+$('gPrev').onclick = () => run(() => { if (state.gPage > 1) { state.gPage--; return loadBoard(); } });
+$('gNext').onclick = () => run(() => { if (state.gPage < state.gLast) { state.gPage++; return loadBoard(); } });
+$('lSave').onclick = () => run(async () => {
+  const r = await api('POST', '/gamification/levels', { name: $('lName').value, min_xp: $('lMin').value === '' ? null : Number($('lMin').value) });
+  say(r.message || 'Level dibuat.', true); $('lName').value = ''; $('lMin').value = ''; await loadGami();
+});
+$('lBody').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; run(async () => {
+  if (!confirm('Hapus level ini?')) return; const r = await api('DELETE', '/gamification/levels/' + b.dataset.lid); say(r.message || 'Dihapus.', true); await loadGami();
+}); };
+
+
+/* ---------- lembaga bimbingan ---------- */
+async function loadInstitutions() {
+  state.lLoaded = true;
+  const r = await api('GET', '/institutions' + qs({ q: $('lQ').value.trim(), status: $('lStatus').value, per_page: 10, page: state.liPage }));
+  const s = r.summary || {};
+  $('lStats').innerHTML = stat('Total Lembaga', s.total) + stat('Lembaga Aktif', s.active) + stat('Pendapatan Lembaga', rp(s.institution_revenue_total)) + stat('Pemasukan Platform', rp(s.platform_revenue_total)) + stat('Pencairan Menunggu', rp(s.pending_payouts_total));
+  $('liBody').innerHTML = (r.data || []).map((i) =>
+    '<tr><td><b>' + esc(i.name) + '</b><br><span class="mut">' + esc(i.email) + '</span></td>' +
+    '<td><span class="pill ' + esc(i.status === 'active' ? 'active' : 'inactive') + '">' + esc(i.status_label) + '</span></td>' +
+    '<td>' + (i.needs_revenue_share ? '<span class="mut">belum diatur</span>' : esc(i.revenue_share_percent) + '%') + '</td>' +
+    '<td>' + esc(i.programs_count) + '</td><td>' + esc(rp(i.balance ? i.balance.available : 0)) + '</td>' +
+    '<td><button data-act="open" data-id="' + i.id + '">Buka</button> ' +
+    '<button class="sec" data-act="toggle" data-id="' + i.id + '" data-status="' + esc(i.status) + '">' + (i.status === 'active' ? 'Nonaktifkan' : 'Aktifkan') + '</button> ' +
+    '<button class="del" data-act="del" data-id="' + i.id + '">Hapus</button></td></tr>'
+  ).join('') || '<tr><td colspan="6" class="mut">Belum ada lembaga.</td></tr>';
+  const m = r.meta || {}; state.liLast = m.last_page || 1;
+  $('liPage').textContent = 'Halaman ' + (m.current_page || 1) + ' dari ' + state.liLast + ' (' + (m.total || 0) + ' lembaga)';
+}
+$('liBody').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; run(async () => {
+  const id = b.dataset.id;
+  if (b.dataset.act === 'open') { state.inst = id; state.period = '3m'; await loadDetail(); return; }
+  if (b.dataset.act === 'toggle') { await api('PATCH', '/institutions/' + id, { status: b.dataset.status === 'active' ? 'inactive' : 'active' }); say('Status lembaga diubah.', true); }
+  if (b.dataset.act === 'del') { if (!confirm('Hapus lembaga ini?')) return; const r = await api('DELETE', '/institutions/' + id); say(r.message, true); }
+  await loadInstitutions();
+}); };
+$('lReload').onclick = () => run(() => { state.liPage = 1; return loadInstitutions(); });
+$('liPrev').onclick = () => run(() => { if (state.liPage > 1) { state.liPage--; return loadInstitutions(); } });
+$('liNext').onclick = () => run(() => { if (state.liPage < state.liLast) { state.liPage++; return loadInstitutions(); } });
+$('iSave').onclick = () => run(async () => {
+  const body = { name: $('iName').value, email: $('iEmail').value, revenue_share_percent: $('iShare').value === '' ? null : Number($('iShare').value) };
+  if ($('iBank').value || $('iHolder').value || $('iNumber').value) { body.bank_name = $('iBank').value; body.bank_account_holder = $('iHolder').value; body.bank_account_number = $('iNumber').value; }
+  const r = await api('POST', '/institutions', body);
+  say(r.message + '\nKata sandi sementara (salin sekarang, tidak ditampilkan lagi): ' + r.temporary_password, true, true);
+  ['iName', 'iEmail', 'iShare', 'iBank', 'iHolder', 'iNumber'].forEach((i) => $(i).value = '');
+  state.liPage = 1; await loadInstitutions();
+});
+
+async function loadDetail() {
+  const r = await api('GET', '/institutions/' + state.inst + '/dashboard?period=' + state.period);
+  const d = r.data, i = r.institution;
+  $('lList').classList.add('hide'); $('lDetail').classList.remove('hide');
+  $('dName').textContent = i.name;
+  $('dStatus').textContent = i.status_label; $('dStatus').className = 'pill ' + (i.status === 'active' ? 'active' : 'inactive');
+  $('dMeta').textContent = i.email + ' • Bergabung sejak ' + (i.joined_at || '').slice(0, 10) + ' • Rekening: ' + (i.bank.label || 'belum diisi');
+  $('dShare').value = i.revenue_share_percent ?? '';
+  $('dPeriods').innerHTML = r.periods.map((p) => '<button data-period="' + p.key + '" class="' + (p.key === d.period.key ? 'on' : '') + '">' + esc(p.label) + '</button>').join('');
+  const c = d.cards, ch = c.total_revenue.change_percent;
+  $('dCards').innerHTML = stat('Total Pendapatan Lembaga' + (ch == null ? '' : ' (' + (ch > 0 ? '+' : '') + ch + '% vs periode lalu)'), rp(c.total_revenue.value)) +
+    stat('Total Konten Terjual', c.content_sold.value) + stat('Total Siswa Aktif (+' + c.active_students.new_in_period + ' baru)', c.active_students.value) +
+    stat('Total Konten Aktif (+' + c.active_programs.released_in_period + ' dirilis)', c.active_programs.value) + stat('Saldo Bisa Dicairkan', rp(c.available_balance.value));
+  const max = Math.max(1, ...d.revenue_chart.points.map((p) => p.institution_amount + p.platform_amount));
+  $('dChartInfo').textContent = '(per ' + { day: 'hari', week: 'minggu', month: 'bulan' }[d.revenue_chart.bucket] + ')';
+  $('dChart').innerHTML = '<table>' + d.revenue_chart.points.map((p) => '<tr><td class="mut" style="white-space:nowrap">' + esc(p.label) + '</td><td style="width:100%"><div class="bar"><i style="width:' + Math.round((p.institution_amount + p.platform_amount) / max * 100) + '%"></i></div></td><td style="white-space:nowrap">' + esc(rp(p.institution_amount)) + '</td></tr>').join('') + '</table>';
+  const f = d.finance;
+  $('dFinance').innerHTML = '<p class="mut" style="margin:4px 0">Saldo bisa dicairkan</p><p style="font-size:22px;margin:0"><b>' + esc(rp(f.available_balance)) + '</b></p><table>' +
+    [['Total pembayaran pembeli', f.gross_total], ['Pendapatan lembaga', f.institution_total], ['Bagian platform', f.platform_total], ['Sudah dicairkan', f.paid_out_total], ['Menunggu dicairkan', f.pending_payout_total]].map((x) => '<tr><td>' + x[0] + '</td><td>' + esc(rp(x[1])) + '</td></tr>').join('') + '</table>' +
+    '<p class="mut" style="margin:6px 0 0">' + (f.can_request_payout ? 'Siap dicairkan ke ' + esc(f.bank_account) : 'Pencairan belum bisa diajukan (butuh saldo dan rekening lengkap).') + '</p>';
+  $('pRequest').disabled = !f.can_request_payout;
+  const sp = d.revenue_split;
+  $('dSplit').innerHTML = sp.institution_percent == null ? '<span class="mut">Bagi hasil belum diatur.</span>' : '<p style="margin:4px 0">Lembaga <b>' + sp.institution_percent + '%</b>: ' + esc(rp(sp.institution_amount)) + '<br>Maxy Academy <b>' + sp.platform_percent + '%</b>: ' + esc(rp(sp.platform_amount)) + '</p>';
+  $('dTop').innerHTML = d.top_programs.map((t) => '<div>' + t.rank + '. ' + esc(t.course.title) + ' <span class="mut">(' + t.sold + ' terjual, ' + esc(t.status_label) + ')</span></div>').join('') || '<span class="mut">Belum ada penjualan.</span>';
+  $('dStudents').innerHTML = d.student_progress.map((x) => '<div>' + esc(x.user.name) + ' <span class="mut">• ' + esc(x.program.title) + ' • progres: ' + (x.progress_percent == null ? 'belum tersedia' : x.progress_percent + '%') + '</span></div>').join('') || '<span class="mut">Belum ada siswa.</span>';
+  $('dVouchers').innerHTML = (d.active_vouchers.items.map((v) => '<div><b>' + esc(v.code) + '</b> <span class="mut">' + esc(v.discount_label) + ' • dipakai ' + esc(v.usage_label) + '</span></div>').join('') || '<span class="mut">Tidak ada voucher aktif.</span>') + '<div class="mut">Total aktif: ' + d.active_vouchers.total + '</div>';
+  await loadPayouts();
+}
+async function loadPayouts() {
+  const r = await api('GET', '/institutions/' + state.inst + '/payouts?per_page=20');
+  $('pBody').innerHTML = (r.data || []).map((p) => '<tr><td>' + esc(p.code) + '</td><td>' + esc((p.requested_at || '').slice(0, 10)) + '</td><td>' + esc(rp(p.amount)) + '</td><td>' + esc(p.destination.label || '-') + '</td><td><span class="pill ' + (p.status === 'completed' ? 'active' : 'inactive') + '">' + esc(p.status_label) + '</span></td><td>' + esc((p.processed_at || '-').slice(0, 10)) + '</td><td>' +
+    (p.status === 'pending' ? '<button data-pid="' + p.id + '" data-to="completed">Tandai selesai</button> <button class="del" data-pid="' + p.id + '" data-to="cancelled">Batalkan</button>' : '') + '</td></tr>').join('') || '<tr><td colspan="7" class="mut">Belum ada pencairan.</td></tr>';
+}
+$('dPeriods').onclick = (e) => { const b = e.target.closest('button'); if (b) run(() => { state.period = b.dataset.period; return loadDetail(); }); };
+$('dBack').onclick = () => run(async () => { $('lDetail').classList.add('hide'); $('lList').classList.remove('hide'); await loadInstitutions(); });
+$('dShareSave').onclick = () => run(async () => { await api('PATCH', '/institutions/' + state.inst, { revenue_share_percent: Number($('dShare').value) }); say('Bagi hasil disimpan (berlaku untuk transaksi berikutnya).', true); await loadDetail(); });
+$('pRequest').onclick = () => run(async () => {
+  const r = await api('POST', '/institutions/' + state.inst + '/payouts', $('pAmount').value === '' ? {} : { amount: Number($('pAmount').value) });
+  say(r.message + ' (' + r.data.code + ', ' + rp(r.data.amount) + ')', true); $('pAmount').value = ''; await loadDetail();
+});
+$('pBody').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; run(async () => {
+  const r = await api('PATCH', '/institutions/' + state.inst + '/payouts/' + b.dataset.pid, { status: b.dataset.to }); say(r.message, true); await loadDetail();
+}); };
+
+/* ---------- pengaturan: role dan akses ---------- */
+let catalog = [];
+async function loadRoles() {
+  state.rLoaded = true;
+  const [r, c] = await Promise.all([api('GET', '/settings/roles'), api('GET', '/settings/permissions')]);
+  catalog = c.data; const s = r.summary;
+  $('rStats').innerHTML = stat('Total Role', s.total_roles) + stat('Total Pengguna', s.total_users) + stat('Role Custom', s.custom_roles);
+  $('rList').innerHTML = r.data.map((x) => '<button class="rolebtn ' + (state.role === x.id ? 'on' : '') + '" data-id="' + x.id + '">' + esc(x.name) + ' <span class="mut">(' + x.users_count + ' pengguna' + (x.is_system ? ', System' : ', Custom') + ')</span></button>').join('');
+  if (state.role) await showRole(state.role);
+}
+async function showRole(id) {
+  state.role = id;
+  document.querySelectorAll('#rList .rolebtn').forEach((b) => b.classList.toggle('on', Number(b.dataset.id) === Number(id)));
+  const r = (await api('GET', '/settings/roles/' + id)).data;
+  const have = new Set(r.permissions), req = new Set(r.required_permissions);
+  let html = '<div class="row" style="justify-content:space-between"><div><b>' + esc(r.name) + '</b> <span class="mut">' + esc(r.slug) + '</span>' + (r.is_locked ? ' <span class="lock">(dikunci: izin Admin tidak dapat diubah)</span>' : '') + '</div><div class="row">' +
+    '<button id="rSave"' + (r.is_locked ? ' disabled' : '') + '>Simpan Perubahan</button>' + (r.is_system ? '' : '<button class="del" id="rDelete">Hapus role</button>') + '</div></div>';
+  html += catalog.map((g) => '<div class="mod">' + esc(g.module) + '</div><table><thead><tr><th>Izin</th><th>Aksi</th><th></th></tr></thead><tbody>' + g.permissions.map((p) => {
+    const locked = r.is_locked || (p.admin_only && !have.has(p.slug)) || req.has(p.slug);
+    return '<tr><td>' + esc(p.name) + '<br><span class="mut">' + esc(p.slug) + '</span></td><td>' + esc(p.action) + '</td><td><input type="checkbox" data-slug="' + esc(p.slug) + '"' + (have.has(p.slug) ? ' checked' : '') + (locked ? ' disabled' : '') + '>' + (p.admin_only && !r.is_locked ? ' <span class="lock">khusus Admin</span>' : '') + (req.has(p.slug) ? ' <span class="lock">wajib</span>' : '') + '</td></tr>';
+  }).join('') + '</tbody></table>').join('');
+  $('rDetail').innerHTML = html;
+}
+$('rList').onclick = (e) => { const b = e.target.closest('button'); if (b) run(() => showRole(Number(b.dataset.id))); };
+$('rDetail').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; run(async () => {
+  if (b.id === 'rSave') {
+    const slugs = [...$('rDetail').querySelectorAll('input[type=checkbox]')].filter((x) => x.checked).map((x) => x.dataset.slug);
+    const r = await api('PATCH', '/settings/roles/' + state.role, { permissions: slugs }); say(r.message + ' (' + r.data.permissions_count + ' izin)', true); await loadRoles();
+  }
+  if (b.id === 'rDelete') { if (!confirm('Hapus role ini?')) return; const r = await api('DELETE', '/settings/roles/' + state.role); say(r.message, true); state.role = null; $('rDetail').innerHTML = '<span class="mut">Pilih role di sebelah kiri.</span>'; await loadRoles(); }
+}); };
+$('rNew').onclick = () => run(async () => { const r = await api('POST', '/settings/roles', { name: $('rNewName').value }); say(r.message, true); $('rNewName').value = ''; state.role = r.data.id; await loadRoles(); });
+
+/* sudah login sebelumnya (cookie masih berlaku)? langsung tampilkan */
+(async () => { try { await afterLogin(); } catch (e) { /* belum login: tampilkan form */ } })();
+</script>
+</body>
+</html>
