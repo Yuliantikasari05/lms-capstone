@@ -38,6 +38,10 @@ Setiap pihak memakai sistem untuk kebutuhan yang berbeda:
 | Siswa | Belajar di kursus akademik dan program Lembaga, mengerjakan tugas dan ujian, melihat nilai dan feedback, serta mengumpulkan XP |
 | Karyawan | Mengikuti pelatihan dan webinar, mengerjakan evaluasi, melihat riwayat belajar, lalu mengajukan sertifikat |
 | Lembaga Bimbingan | Menjual dan mengelola program sendiri, melihat siswa yang membeli program, memantau progres mereka, serta melihat enrollment dan pemasukan |
+| Lembaga Bimbingan (profil dan akun) | Dikelola Admin. Satu akun Lembaga = satu lembaga; profil dibuat bersamaan dengan akun (kata sandi sementara). Menghapus lembaga ditolak bila punya riwayat transaksi/pencairan atau siswa aktif; cukup dinonaktifkan. Detail API di `docs/api-lembaga-bimbingan.md`. |
+| Bagi hasil Lembaga | Persentase bagian lembaga (1 sampai 100) diatur Admin per lembaga; sisanya platform. Dicatat pada setiap transaksi saat terjadi, sehingga mengubah persentase tidak mengubah riwayat. Bagian lembaga dibulatkan ke bawah. |
+| Pencairan dana Lembaga | Diajukan dan diproses Admin (izin terpisah `institutions.payout`). Saldo = bagian lembaga dari transaksi dibayar dikurangi pencairan menunggu dan selesai. Rekening tujuan disalin saat pengajuan; nomor rekening terenkripsi dan tidak pernah ditampilkan utuh. |
+| Role dan akses | Admin mengatur izin tiap role (Pengaturan). Role Admin dikunci; role bawaan tidak dapat dihapus/diganti nama dan tetap memegang izin dashboard-nya; izin khusus Admin tidak dapat diberikan ke role lain. Role khusus boleh dibuat dan dihapus bila tidak dipakai. |
 
 ## Lima role dan batas aksesnya
 
