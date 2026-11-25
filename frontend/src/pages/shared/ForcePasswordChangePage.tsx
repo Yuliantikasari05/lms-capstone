@@ -25,7 +25,7 @@ export default function ForcePasswordChangePage() {
           </div>
         </div>
 
-        <ChangePasswordForm onChanged={retryBoot} />
+        <ChangePasswordForm onChanged={retryBoot} requireTerms />
 
         <p className="mt-5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-500">
           Akun ini dikelola oleh Administrator LMS untuk keperluan administrasi (membuat, menonaktifkan, atau mereset akun). Seluruh tindakan pengelolaan akun dicatat. Setelah Anda

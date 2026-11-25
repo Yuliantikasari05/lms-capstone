@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Poppins (lisensi OFL, lihat assets/fonts/OFL.txt). Hanya diunduh di halaman yang memakai font-poppins. */
+@font-face {
+  font-family: 'Poppins';
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/poppins-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/poppins-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/poppins-700.woff2') format('woff2');
+}
+
 @layer base {
   html,
   body,

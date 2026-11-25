@@ -24,6 +24,7 @@ export default {
         surface: '#F4F6FA',
       },
       fontFamily: {
+        poppins: ['Poppins', '"Segoe UI"', 'system-ui', 'sans-serif'],
         sans: ['"Segoe UI"', 'system-ui', '-apple-system', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
       },
     },
