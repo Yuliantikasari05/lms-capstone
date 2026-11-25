@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
 
-/** Membuat role khusus atau mengubah nama, deskripsi, dan izin role. Aturan izin diperiksa controller. */
+/** Membuat role khusus atau mengubah nama, deskripsi, dan izin role. Kelayakan izin diperiksa RoleMatrix::assertValid. */
 class RoleSettingRequest extends FormRequest
 {
     public function authorize(): bool
@@ -39,7 +39,7 @@ class RoleSettingRequest extends FormRequest
             }],
             'description' => ['sometimes', 'nullable', 'string', 'max:255'],
             'permissions' => [$role ? 'sometimes' : 'nullable', 'array', 'max:200'],
-            'permissions.*' => ['string', 'distinct', 'exists:permissions,slug'],
+            'permissions.*' => ['string', 'distinct'],
         ];
     }
 
@@ -51,7 +51,6 @@ class RoleSettingRequest extends FormRequest
             'name.max' => 'Nama role maksimal 100 karakter.',
             'description.max' => 'Deskripsi maksimal 255 karakter.',
             'permissions.array' => 'Daftar izin harus berupa larik.',
-            'permissions.*.exists' => 'Ada izin yang tidak dikenal.',
             'permissions.*.distinct' => 'Ada izin yang dikirim dua kali.',
         ];
     }

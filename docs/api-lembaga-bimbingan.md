@@ -159,45 +159,13 @@ Saldo yang dapat dicairkan = total bagian lembaga dari transaksi `paid` dikurang
 
 ## 2. Pengaturan: Role & Akses
 
-| Metode | URL | Izin | Keterangan |
-|---|---|---|---|
-| GET | `/settings/roles` | `roles.view` | Daftar role + kartu ringkasan |
-| GET | `/settings/roles/{id}` | `roles.view` | Detail role beserta daftar slug izinnya |
-| GET | `/settings/permissions` | `roles.view` | Katalog izin per modul (dasar matriks C/R/U/D) |
-| POST | `/settings/roles` | `roles.manage` | Buat role khusus (201) |
-| PATCH | `/settings/roles/{id}` | `roles.manage` | Ubah nama, deskripsi, dan/atau izin |
-| DELETE | `/settings/roles/{id}` | `roles.manage` | Hapus role khusus |
-
-`GET /settings/roles` (`GET /roles` lama tetap ada dan tidak berubah):
-
-```json
-{
-  "data": [{ "id": 1, "slug": "admin", "name": "Admin", "description": null, "is_system": true, "is_locked": true,
-             "users_count": 1, "permissions_count": 22, "required_permissions": ["dashboard.admin"] }],
-  "summary": { "total_roles": 5, "total_users": 5, "custom_roles": 0 }
-}
-```
-
-`GET /settings/permissions`: `{ "data": [{ "module": "Lembaga Bimbingan", "permissions": [{ "slug": "institutions.view", "name": "...", "action": "read", "admin_only": false }] }] }`.
-`action` bernilai `read`, `create`, `update`, `delete`, atau `other` (izin khusus seperti `institutions.payout`) untuk menggambar kolom C/R/U/D.
-
-`PATCH /settings/roles/{id}` body (semua opsional): `{ "name": "...", "description": "...", "permissions": ["dashboard.mentor", "coupons.view"] }`.
-`permissions` adalah **daftar lengkap** izin yang diinginkan (menggantikan yang lama). Perubahan berlaku seketika.
-
-Pengaman (semuanya 422):
-- Role **Admin dikunci**: izinnya tidak dapat diubah dan tidak dapat dihapus, agar Admin tidak mengunci dirinya.
-- **Role bawaan** (Admin, Mentor, Karyawan, Siswa, Lembaga Bimbingan) tidak dapat dihapus atau diganti namanya, dan wajib tetap memegang izin dashboard miliknya (`dashboard.<slug>`).
-- Izin **khusus Admin** tidak dapat diberikan ke role lain: `roles.view`, `roles.manage`, `audit.view`, `users.reset_password`, `dashboard.admin`.
-- Nama role unik (tanpa membedakan huruf besar-kecil). Slug role khusus dibuat otomatis dari nama dan tidak berubah saat nama diganti.
-- Role khusus hanya dapat dihapus bila tidak dipakai pengguna mana pun.
-
-Role khusus dapat dipilih pada `POST /users` lewat `role` (slug). Pengguna dengan role khusus hanya memiliki izin yang diberikan kepadanya.
+Dipindahkan ke dokumen tersendiri karena matriksnya dirancang ulang: lihat `docs/api-pengaturan-role-akses.md`.
 
 ## 3. Audit log
 
 Aksi baru yang tercatat: `institution.created`, `institution.updated`, `institution.deleted`, `institution.restored`,
 `institution.payout_requested`, `institution.payout_completed`, `institution.payout_cancelled`,
-`role.created`, `role.updated`, `role.deleted`. Nomor rekening hanya dicatat 4 digit terakhirnya; kata sandi tidak pernah dicatat.
+`role.created`, `role.updated`, `role.reset`, `role.deleted`. Nomor rekening hanya dicatat 4 digit terakhirnya; kata sandi tidak pernah dicatat.
 Catatan role memuat nama role di `changes.role` dan, untuk perubahan izin, `permissions_added` dan `permissions_removed`.
 
 ## 4. Untuk modul pembayaran (tahap berikutnya)
