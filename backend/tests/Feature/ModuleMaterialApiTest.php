@@ -6,7 +6,6 @@ use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\CourseModule;
 use App\Models\Material;
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -565,11 +564,8 @@ class ModuleMaterialApiTest extends TestCase
         $this->postJson('/api/v1/modules/1/materials', [])->assertUnauthorized();
     }
 
-    public function test_a_future_mentor_manages_and_downloads_only_own_course_content(): void
+    public function test_a_mentor_manages_and_downloads_only_own_course_content(): void
     {
-        Role::where('slug', Role::MENTOR)->firstOrFail()->permissions()->syncWithoutDetaching(
-            Permission::whereIn('slug', ['courses.view', 'courses.update', 'content.manage'])->pluck('id')
-        );
         $mentor = $this->userWithRole(Role::MENTOR);
         $own = Course::factory()->active()->mentoredBy($mentor)->create();
         $ownModule = $this->module(['title' => 'Milik Saya'], $own);

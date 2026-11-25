@@ -29,7 +29,7 @@ class CourseModuleController extends Controller
     public function store(ModuleRequest $request, Course $course): JsonResponse
     {
         $module = DB::transaction(function () use ($request, $course) {
-            $module = new CourseModule(['title' => $request->validated('title')]);
+            $module = new CourseModule($request->safe()->only(['title', 'description']));
             $module->course_id = $course->id;
             $module->position = ((int) $course->modules()->max('position')) + 1;
             $module->save();
@@ -47,17 +47,19 @@ class CourseModuleController extends Controller
 
     public function update(ModuleRequest $request, CourseModule $module): CourseModuleResource
     {
-        $before = $module->title;
+        $before = $module->only(['title', 'description']);
 
         DB::transaction(function () use ($request, $module, $before) {
-            $module->title = $request->validated('title');
-            $module->save();
+            $module->fill($request->validated())->save();
 
-            if ($before !== $module->title) {
+            $after = $module->only(['title', 'description']);
+            $changed = array_keys(array_filter($after, fn ($value, $key) => $value !== $before[$key], ARRAY_FILTER_USE_BOTH));
+
+            if ($changed !== []) {
                 AuditLog::record('module.updated', $module, [
                     'course_id' => $module->course_id,
-                    'before' => ['title' => $before],
-                    'after' => ['title' => $module->title],
+                    'before' => array_intersect_key($before, array_flip($changed)),
+                    'after' => array_intersect_key($after, array_flip($changed)),
                 ], $request);
             }
         });

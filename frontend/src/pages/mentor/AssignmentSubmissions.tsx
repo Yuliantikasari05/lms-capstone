@@ -9,102 +9,21 @@ import {
   UserRound,
 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
-import { EmptyState } from '../../components/ui/States'
+import { EmptyState, ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import {
+  fetchSubmissions,
+  gradeSubmission,
+  type SubmissionPreview,
+  type SubmissionQuestionPreview,
+} from './assignmentApi'
 
 type Audience = 'Siswa' | 'Karyawan'
 type SubmissionStatus = 'Belum dinilai' | 'Sudah dinilai'
+type SubmittedQuestion = SubmissionQuestionPreview
 
-interface SubmittedQuestion {
-  id: number
-  type: 'Pilihan ganda' | 'Essay' | 'Upload file'
-  prompt: string
-  points: number
-  maxPoints: number
-  answer: string
-  options?: { label: string; text: string; correct?: boolean; selected?: boolean }[]
-  fileName?: string
-}
-
-interface AssignmentSubmission {
-  id: number
-  audience: Audience
-  studentName: string
-  assignmentTitle: string
-  courseTitle: string
-  submittedAt: string
-  status: SubmissionStatus
-  score: number | null
-  feedback: string
-  questions: SubmittedQuestion[]
-}
-
-const INITIAL_QUESTION_SET: SubmittedQuestion[] = [
-  {
-    id: 1,
-    type: 'Pilihan ganda',
-    prompt: 'Kalimat di bawah ini yang menggunakan penulisan kata depan yang tepat adalah',
-    points: 0,
-    maxPoints: 30,
-    answer: 'B',
-    options: [
-      { label: 'A', text: 'Kucing itu tidur diatas kasur.' },
-      { label: 'B', text: 'Ayah pergi ke kantor setiap pagi.', correct: true, selected: true },
-      { label: 'C', text: 'Buku itu diletakkan dimeja.' },
-    ],
-  },
-  {
-    id: 2,
-    type: 'Essay',
-    prompt: 'Tuliskan kembali kalimat berikut dengan memperbaiki penulisan kata serapan dan tanda baca yang salah.',
-    points: 0,
-    maxPoints: 30,
-    answer: 'Jadwal ujian apotek akan diumumkan hari ini, tetapi para siswa belum mengetahuinya.',
-  },
-  {
-    id: 3,
-    type: 'Upload file',
-    prompt: 'Buatlah 5 paragraf dengan tema liburan akhir semester dengan ejaan dan tanda baca yang benar.',
-    points: 0,
-    maxPoints: 40,
-    answer: 'Tugas bahasa Indonesia.pdf · 1.5 MB',
-    fileName: 'Tugas bahasa Indonesia.pdf',
-  },
-]
-
-const FIRST_STUDENT_ROWS: Omit<AssignmentSubmission, 'id' | 'audience' | 'questions'>[] = [
-  { studentName: 'Syamsul Amilien', assignmentTitle: 'Tugas 1: Ejaan dalam bahasa Indonesia', courseTitle: 'Bahasa Indonesia Lanjutan', submittedAt: '10 Jun 2026, 13:02', status: 'Sudah dinilai', score: 88, feedback: 'Jawaban baik, perhatikan kembali penggunaan kata depan.' },
-  { studentName: 'Syamsul Amilien', assignmentTitle: 'Tugas 1: Ejaan dalam bahasa Indonesia', courseTitle: 'Bahasa Indonesia Lanjutan', submittedAt: '10 Jun 2026, 13:02', status: 'Sudah dinilai', score: 88, feedback: 'Pekerjaan sudah sesuai instruksi.' },
-  { studentName: 'Auditya Wira A', assignmentTitle: 'Tugas 1: Ejaan dalam bahasa Indonesia', courseTitle: 'Bahasa Indonesia Lanjutan', submittedAt: '10 Jun 2026, 13:02', status: 'Belum dinilai', score: null, feedback: '' },
-  { studentName: 'Syamsul Amilien', assignmentTitle: 'Tugas 1: Ejaan dalam bahasa Indonesia', courseTitle: 'Bahasa Indonesia Lanjutan', submittedAt: '10 Jun 2026, 13:02', status: 'Belum dinilai', score: null, feedback: '' },
-  { studentName: 'Syamsul Amilien', assignmentTitle: 'Tugas 1: Ejaan dalam bahasa Indonesia', courseTitle: 'Bahasa Indonesia Lanjutan', submittedAt: '10 Jun 2026, 13:02', status: 'Sudah dinilai', score: 88, feedback: 'Terus pertahankan hasil belajarnya.' },
-]
-
-const FIRST_EMPLOYEE_ROWS: Omit<AssignmentSubmission, 'id' | 'audience' | 'questions'>[] = [
-  { studentName: 'Alya Putri', assignmentTitle: 'Kuis 3: Membuat API Google Meet', courseTitle: 'Fullstack web developer professional', submittedAt: '12 Jun 2026, 10:15', status: 'Sudah dinilai', score: 92, feedback: 'Pemahaman API sudah sangat baik.' },
-  { studentName: 'Rizky Pratama', assignmentTitle: 'Kuis 3: Membuat API Google Meet', courseTitle: 'Fullstack web developer professional', submittedAt: '12 Jun 2026, 11:20', status: 'Sudah dinilai', score: 84, feedback: 'Perhatikan detail alur autentikasi.' },
-  { studentName: 'Dina Maharani', assignmentTitle: 'Analisis keamanan jaringan', courseTitle: 'Cyber security fundamental', submittedAt: '13 Jun 2026, 09:30', status: 'Belum dinilai', score: null, feedback: '' },
-  { studentName: 'Rizky Pratama', assignmentTitle: 'Kuis 3: Membuat API Google Meet', courseTitle: 'Fullstack web developer professional', submittedAt: '13 Jun 2026, 14:02', status: 'Belum dinilai', score: null, feedback: '' },
-  { studentName: 'Syamsul Amilien', assignmentTitle: 'Kuis 3: Membuat API Google Meet', courseTitle: 'Fullstack web developer professional', submittedAt: '14 Jun 2026, 13:02', status: 'Sudah dinilai', score: 88, feedback: 'Hasil baik, lanjutkan latihan.' },
-]
-
-const MORE_STUDENTS = ['Lisa Amelia', 'Nadia Safitri', 'Fajar Ramadhan', 'Sinta Ratnasari', 'Putri Maharani', 'Dentri Aprilia', 'Yudha Pratama', 'Auditya Wira A']
-const MORE_EMPLOYEES = ['Rizky Pratama', 'Dina Maharani', 'Syamsul Amilien', 'Dentri Aprilia', 'Yudha Pratama', 'Putri Maharani', 'Alya Putri', 'Fajar Ramadhan']
-const STUDENT_TASKS = ['Kuis: Struktur teks', 'Tugas: Analisis paragraf', 'Latihan ejaan bahasa Indonesia', 'Tugas: Membuat ringkasan']
-const EMPLOYEE_TASKS = ['Kuis: Struktur basis data', 'Tugas: Membuat API sederhana', 'Latihan keamanan jaringan', 'Tugas: Analisis data']
-
-function questionsForScore(score: number | null): SubmittedQuestion[] {
-  const questions = INITIAL_QUESTION_SET.map((question) => ({ ...question }))
-  const multipleChoicePoints = getMultipleChoicePoints(questions[0])
-  questions[0].points = multipleChoicePoints
-  if (score === null) return questions
-
-  const remainingScore = Math.max(0, score - multipleChoicePoints)
-  const essayPoints = Math.min(30, Math.round(remainingScore / 2))
-  questions[1].points = essayPoints
-  questions[2].points = Math.min(40, Math.max(0, remainingScore - essayPoints))
-  return questions
-}
-
+/** Pilihan ganda dinilai otomatis dari jawaban benar yang tersimpan di soal. */
 function getMultipleChoicePoints(question: SubmittedQuestion): number {
   const options = question.options ?? []
   const correctOptions = options.filter((option) => option.correct)
@@ -115,39 +34,6 @@ function getMultipleChoicePoints(question: SubmittedQuestion): number {
   return isCorrect ? question.maxPoints : 0
 }
 
-function createSubmissions(audience: Audience): AssignmentSubmission[] {
-  const firstRows = audience === 'Siswa' ? FIRST_STUDENT_ROWS : FIRST_EMPLOYEE_ROWS
-  const names = audience === 'Siswa' ? MORE_STUDENTS : MORE_EMPLOYEES
-  const tasks = audience === 'Siswa' ? STUDENT_TASKS : EMPLOYEE_TASKS
-  const extras = Array.from({ length: 33 }, (_, index) => {
-    const id = index + 6
-    const pending = index === 4 || index === 13 || index === 24
-    const task = tasks[index % tasks.length]
-    return {
-      studentName: names[index % names.length],
-      assignmentTitle: task,
-      courseTitle: audience === 'Siswa' ? 'Bahasa Indonesia Lanjutan' : 'Fullstack web developer professional',
-      submittedAt: `${15 + index % 12} Jun 2026, ${String(9 + index % 8).padStart(2, '0')}:${String(index * 7 % 60).padStart(2, '0')}`,
-      status: pending ? 'Belum dinilai' as const : 'Sudah dinilai' as const,
-      score: pending ? null : 72 + (index * 7) % 29,
-      feedback: pending ? '' : 'Pengerjaan sudah ditinjau oleh Mentor.',
-      id,
-      audience,
-      questions: questionsForScore(pending ? null : 72 + (index * 7) % 29),
-    }
-  })
-
-  return [
-    ...firstRows.map((row, index) => ({ ...row, id: index + 1, audience, questions: questionsForScore(row.score) })),
-    ...extras,
-  ]
-}
-
-const SUBMISSIONS: Record<Audience, AssignmentSubmission[]> = {
-  Siswa: createSubmissions('Siswa'),
-  Karyawan: createSubmissions('Karyawan'),
-}
-
 const PAGE_SIZE = 5
 
 const STATUS_STYLES: Record<SubmissionStatus, string> = {
@@ -156,11 +42,16 @@ const STATUS_STYLES: Record<SubmissionStatus, string> = {
 }
 
 export function AssignmentSubmissions({ audience }: { audience: Audience }) {
-  const [rows, setRows] = useState(SUBMISSIONS[audience])
+  const submissions = useApiData(fetchSubmissions, [])
   const [taskFilter, setTaskFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<'all' | SubmissionStatus>('all')
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  const rows = useMemo(
+    () => (submissions.data ?? []).filter((row) => row.audience === audience),
+    [audience, submissions.data],
+  )
 
   const tasks = useMemo(() => [...new Set(rows.map((row) => row.assignmentTitle))], [rows])
   const filteredRows = rows.filter((row) =>
@@ -171,10 +62,18 @@ export function AssignmentSubmissions({ audience }: { audience: Audience }) {
   const visibleRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const selectedSubmission = rows.find((row) => row.id === selectedId)
 
-  const saveAssessment = (submissionId: number, score: number, feedback: string, questions: SubmittedQuestion[]) => {
-    setRows((current) => current.map((row) => row.id === submissionId
-      ? { ...row, status: 'Sudah dinilai', score, feedback, questions }
-      : row))
+  const saveAssessment = async (
+    submissionId: number,
+    score: number,
+    feedback: string,
+    questions: SubmittedQuestion[],
+  ) => {
+    await gradeSubmission(submissionId, {
+      score,
+      feedback,
+      answers: questions.map((question) => ({ question_id: question.id, points_awarded: question.points })),
+    })
+    submissions.reload()
   }
 
   if (selectedSubmission) {
@@ -226,7 +125,10 @@ export function AssignmentSubmissions({ audience }: { audience: Audience }) {
         </label>
       </div>
 
-      {visibleRows.length === 0 ? (
+      {submissions.loading && !submissions.data && <div className="mt-4"><Spinner label="Memuat pengumpulan…" /></div>}
+      {submissions.error && <div className="mt-4"><ErrorState error={submissions.error} onRetry={submissions.reload} /></div>}
+
+      {submissions.data && (visibleRows.length === 0 ? (
         <div className="mt-4"><EmptyState title="Pengumpulan tidak ditemukan" description="Coba ubah filter tugas atau status." /></div>
       ) : (
         <>
@@ -283,8 +185,8 @@ export function AssignmentSubmissions({ audience }: { audience: Audience }) {
             </div>
           </footer>
         </>
-      )}
-      <p className="mt-4 text-center text-[10px] text-slate-400">Pratinjau statis · data pengumpulan dan nilai hanya contoh.</p>
+      ))}
+      <p className="mt-4 text-center text-[10px] text-slate-400">Pengumpulan dan nilai tersimpan di server.</p>
     </section>
   )
 }
@@ -296,15 +198,17 @@ function AssessmentReview({
   onSelect,
   onSave,
 }: {
-  submission: AssignmentSubmission
+  submission: SubmissionPreview
   submissionIds: number[]
   onBack: () => void
   onSelect: (id: number) => void
-  onSave: (id: number, score: number, feedback: string, questions: SubmittedQuestion[]) => void
+  onSave: (id: number, score: number, feedback: string, questions: SubmittedQuestion[]) => Promise<void>
 }) {
-  const [questions, setQuestions] = useState(submission.questions.map((question) => ({ ...question })))
+  const [questions, setQuestions] = useState<SubmittedQuestion[]>(submission.questions.map((question) => ({ ...question })))
   const [feedback, setFeedback] = useState(submission.feedback)
   const [notice, setNotice] = useState<string | null>(null)
+  const [noticeTone, setNoticeTone] = useState<'info' | 'error'>('info')
+  const [saving, setSaving] = useState(false)
   const graded = submission.status === 'Sudah dinilai'
   const reviewedQuestions = questions.map((question) => question.type === 'Pilihan ganda'
     ? { ...question, points: getMultipleChoicePoints(question) }
@@ -320,10 +224,21 @@ function AssessmentReview({
       : question))
   }
 
-  const submitGrade = (event: FormEvent<HTMLFormElement>) => {
+  const submitGrade = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSave(submission.id, totalScore, feedback, reviewedQuestions)
-    setNotice('Penilaian berhasil disimpan pada pratinjau.')
+    setSaving(true)
+    setNotice(null)
+
+    try {
+      await onSave(submission.id, totalScore, feedback, reviewedQuestions)
+      setNoticeTone('info')
+      setNotice('Penilaian berhasil disimpan.')
+    } catch (error) {
+      setNoticeTone('error')
+      setNotice(toApiError(error).message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -346,7 +261,9 @@ function AssessmentReview({
         </div>
       </div>
 
-      {notice && <p role="status" aria-live="polite" className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">{notice}</p>}
+      {notice && (
+        <p role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs ${noticeTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-green-50 text-green-700'}`}>{notice}</p>
+      )}
 
       <form onSubmit={submitGrade} className="mentor-assignment-layout">
         <div className="min-w-0 space-y-3">
@@ -392,8 +309,8 @@ function AssessmentReview({
               className="mt-1 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-brand-500 disabled:bg-slate-50 disabled:text-slate-600"
             />
           </label>
-          <button type="submit" disabled={graded} className="w-full rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500">
-            {graded ? 'Penilaian sudah disimpan' : 'Simpan nilai'}
+          <button type="submit" disabled={graded || saving} className="w-full rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500">
+            {graded ? 'Penilaian sudah disimpan' : saving ? 'Menyimpan…' : 'Simpan nilai'}
           </button>
           {!graded && reviewedQuestions.some((question) => question.type === 'Pilihan ganda') && (
             <p className="text-center text-[10px] leading-4 text-slate-500">

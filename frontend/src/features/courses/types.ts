@@ -26,6 +26,8 @@ export interface Course {
   modules_count?: number
   sessions_count?: number
   participants_count?: number
+  /** Akumulasi durasi seluruh materi (menit). */
+  duration_minutes?: number
   abilities: CourseAbilities | null
   created_at: string | null
   updated_at: string | null
@@ -50,6 +52,7 @@ export interface CourseModule {
   id: number
   course_id: number
   title: string
+  description: string | null
   position: number
   materials?: Material[]
   materials_count?: number
@@ -61,6 +64,7 @@ export interface ClassSession {
   id: number
   course_id: number
   title: string
+  description: string | null
   type: 'class' | 'training' | 'webinar'
   type_label: string
   instructor: { id: number; name: string } | null

@@ -18,6 +18,7 @@ class ClassSessionResource extends JsonResource
             'id' => $this->id,
             'course_id' => $this->course_id,
             'title' => $this->title,
+            'description' => $this->description,
             // Tipe mengikuti jenis kursus; instruktur = Mentor kursus (keputusan 6).
             'type' => match ($course->type) {
                 \App\Models\Course::TYPE_TRAINING => 'training',
@@ -29,6 +30,15 @@ class ClassSessionResource extends JsonResource
             'starts_at' => $this->starts_at?->toIso8601String(),
             'ends_at' => $this->ends_at?->toIso8601String(),
             'status' => $this->timeStatus(),
+            'mode' => $this->mode ?? \App\Models\ClassSession::MODE_ONLINE,
+            'mode_label' => ($this->mode ?? \App\Models\ClassSession::MODE_ONLINE) === \App\Models\ClassSession::MODE_OFFLINE ? 'Offline' : 'Online',
+            'location' => $this->location,
+            // draft/terjadwal/dibatalkan; "Sedang berlangsung" diturunkan klien dari status waktu.
+            'schedule_status' => $this->status ?? \App\Models\ClassSession::STATUS_SCHEDULED,
+            'schedule_status_label' => $this->statusLabel(),
+            'cancellation_reason' => $this->cancellation_reason,
+            'mentor_name' => $course->mentor?->name,
+            'participants' => $course->active_enrollments_count ?? null,
             // Link meeting hanya untuk yang berhak mengelola. Peserta mengambilnya lewat endpoint tersendiri
             // (dengan aturan jendela waktu) pada tahap 2b.
             'meeting_url' => $this->when($user && Gate::forUser($user)->allows('manageContent', $course), $this->meeting_url),

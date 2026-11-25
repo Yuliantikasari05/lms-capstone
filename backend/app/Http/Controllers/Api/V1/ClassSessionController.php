@@ -19,7 +19,7 @@ class ClassSessionController extends Controller
     {
         Gate::authorize('viewContent', $course);
 
-        return ClassSessionResource::collection($course->sessions()->with('course.mentor')->get());
+        return ClassSessionResource::collection($this->withScheduleContext($course->sessions())->get());
     }
 
     public function show(ClassSession $session): ClassSessionResource
@@ -27,12 +27,16 @@ class ClassSessionController extends Controller
         $course = $this->courseOf($session);
         Gate::authorize('viewContent', $course);
 
-        return new ClassSessionResource($session->load('course.mentor'));
+        return new ClassSessionResource($this->withScheduleContext(ClassSession::whereKey($session->id))->firstOrFail());
     }
 
     public function store(SessionRequest $request, Course $course): JsonResponse
     {
         $data = $request->validated();
+        // Sesi Offline tidak memakai tautan meeting.
+        if (($data['mode'] ?? ClassSession::MODE_ONLINE) === ClassSession::MODE_OFFLINE) {
+            $data['meeting_url'] = null;
+        }
 
         $session = DB::transaction(function () use ($data, $course, $request) {
             $session = new ClassSession($data);
@@ -56,6 +60,9 @@ class ClassSessionController extends Controller
     public function update(SessionRequest $request, ClassSession $session): ClassSessionResource
     {
         $data = $request->validated();
+        if (($data['mode'] ?? $session->mode) === ClassSession::MODE_OFFLINE) {
+            $data['meeting_url'] = null;
+        }
         $before = $this->snapshot($session);
         $oldUrl = $session->meeting_url;
 
@@ -105,6 +112,15 @@ class ClassSessionController extends Controller
 
         return response()->json(['data' => ['meeting_url' => $session->meeting_url]])
             ->header('Cache-Control', 'private, no-store');
+    }
+
+    /** Sertakan jumlah peserta aktif dan Mentor agar resource tidak menembak query per baris. */
+    private function withScheduleContext($query)
+    {
+        return $query->with([
+            'course.mentor',
+            'course' => fn ($course) => $course->withCount('activeEnrollments'),
+        ]);
     }
 
     private function courseOf(ClassSession $session): Course

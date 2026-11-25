@@ -135,7 +135,7 @@ Mengembalikan izin **role bawaan** ke pengaturan awal sistem. 422 untuk role khu
   php artisan lms:reset-role-permissions --prune          (cabut izin yang tidak sah pada semua role)
   ```
   `--prune` berguna untuk data lama: mencabut izin yang tidak dikenal, belum tersedia, atau tidak berlaku untuk role itu (mis. `users.create` yang pernah diberikan ke role khusus).
-- Izin bawaan tiap role tidak diubah: Mentor, Siswa, Karyawan, dan Lembaga hanya memegang dashboard-nya. Admin menyalakan fitur lain lewat matriks.
+- Izin bawaan: Mentor memegang `dashboard.mentor` beserta izin kursusnya (`courses.view`, `courses.create`, `courses.update`, `content.manage`); Siswa, Karyawan, dan Lembaga hanya memegang dashboard-nya. Admin menyalakan fitur lain lewat matriks.
 
 ## 5. Audit log
 

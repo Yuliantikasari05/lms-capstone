@@ -98,7 +98,10 @@ class RbacCatalogTest extends TestCase
 
     public function test_non_admin_roles_only_get_what_the_backend_can_scope_to_their_own_data(): void
     {
-        $this->assertEqualsCanonicalizing(['dashboard.mentor', 'courses.view', 'courses.create', 'courses.update', 'content.manage'], Catalog::assignable(Catalog::MENTOR));
+        $this->assertEqualsCanonicalizing([
+            'dashboard.mentor', 'courses.view', 'courses.create', 'courses.update', 'content.manage',
+            'assignments.view', 'assignments.manage', 'assignments.grade',
+        ], Catalog::assignable(Catalog::MENTOR));
         $this->assertEqualsCanonicalizing(['dashboard.lembaga', 'courses.view', 'courses.update', 'content.manage'], Catalog::assignable(Catalog::LEMBAGA));
         // Siswa dan Karyawan: belum ada API untuk mereka, jadi hanya dashboard.
         $this->assertSame(['dashboard.siswa'], Catalog::assignable(Catalog::SISWA));
@@ -141,7 +144,7 @@ class RbacCatalogTest extends TestCase
 
         // Urutan hi-fi: Dashboard, Manajemen Pengguna, Kurikulum dan Kursus, Gamifikasi & XP, Setting.
         // Kupon dan Lembaga Bimbingan ditambahkan karena keduanya menu Admin yang nyata (sidebar hi-fi).
-        $this->assertSame(['Dashboard', 'Manajemen Pengguna', 'Kurikulum dan Kursus', 'Manajemen Kupon', 'Gamifikasi dan XP', 'Lembaga Bimbingan', 'Setting'], $names);
+        $this->assertSame(['Dashboard', 'Manajemen Pengguna', 'Kurikulum dan Kursus', 'Tugas dan Ujian', 'Manajemen Kupon', 'Gamifikasi dan XP', 'Lembaga Bimbingan', 'Setting'], $names);
     }
 
     public function test_the_admin_matrix_has_the_activities_and_cr_u_d_columns_of_the_hifi(): void

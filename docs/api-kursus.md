@@ -8,7 +8,7 @@ Istilah di desain "kurikulum" dan "kursus" dimaksudkan sama; di kode dan UI sela
 
 Dua lapis, sesuai docs: **permission** (izin umum role) dan **kepemilikan** (CoursePolicy).
 
-| Kemampuan | Permission | Admin | Mentor (nanti) | Lembaga (tahap 4) |
+| Kemampuan | Permission | Admin | Mentor | Lembaga (tahap 4) |
 |---|---|---|---|---|
 | Lihat daftar/detail | `courses.view` | semua kursus | hanya yang diampu | hanya program miliknya |
 | Buat kursus | `courses.create` | ya (menunjuk Mentor) | ya (otomatis jadi pengampu) | - |
@@ -18,7 +18,7 @@ Dua lapis, sesuai docs: **permission** (izin umum role) dan **kepemilikan** (Cou
 | Modul, materi, sesi | `content.manage` | ya | hanya miliknya | hanya miliknya |
 | Peserta | `enrollments.manage` | ya | tidak | - |
 
-Sekarang semua permission hanya dimiliki Admin. Aturan kepemilikan untuk Mentor dan Lembaga sudah ditulis dan diuji, tetapi izinnya baru diberikan saat halaman role itu dikerjakan.
+Mentor sudah memegang izin bawaannya (`courses.view`, `courses.create`, `courses.update`, `content.manage`), sehingga halaman Kursus Saya dapat memakai endpoint ini; kepemilikan tetap membatasi ke kursus yang diampu. Izin Lembaga baru diberikan saat tahap 4 dikerjakan.
 
 Program Lembaga (`type=institution`) tampil di daftar Admin tetapi **hanya-baca**: ubah, hapus, konten, dan peserta ditolak 403 ("Program Lembaga hanya dapat diubah oleh lembaganya.").
 
@@ -52,8 +52,8 @@ Setiap kursus di response memuat `abilities` (`update`, `delete`, `assign_mentor
 | Metode | Path | Keterangan |
 |---|---|---|
 | GET | `/courses/{id}/modules` | Modul beserta materinya, terurut |
-| POST | `/courses/{id}/modules` | `title` |
-| PATCH / DELETE | `/modules/{id}` | |
+| POST | `/courses/{id}/modules` | `title`, `description?` |
+| PATCH / DELETE | `/modules/{id}` | `title`, `description?` |
 | PUT | `/courses/{id}/modules/order` | `ids`: seluruh id modul kursus dalam urutan baru |
 | POST | `/modules/{id}/materials` | **multipart/form-data**. `title`, `type` (`video` `pdf` `document` `link`), `description?`, `file` atau `external_url` sesuai tipe, `duration_minutes?` (video), `xp_points?` (akademik) |
 | PATCH | `/materials/{id}` | Tipe tidak dapat diubah. Bila menyertakan file baru, kirim `POST` dengan `_method=PATCH` (PHP tidak membaca multipart pada PATCH). |
@@ -67,10 +67,17 @@ Aturan file: PDF `pdf`; dokumen `doc docx ppt pptx xls xlsx txt csv`; video `mp4
 
 | Metode | Path | Keterangan |
 |---|---|---|
-| GET | `/courses/{id}/sessions` | Terurut waktu mulai. Memuat `status`: `upcoming` `ongoing` `finished`. |
-| POST | `/courses/{id}/sessions` | `title`, `starts_at`, `ends_at` (ISO 8601; diubah ke zona waktu aplikasi), `meeting_url` |
-| GET / PATCH / DELETE | `/sessions/{id}` | `meeting_url` hanya muncul bagi yang berhak mengelola |
+| GET | `/courses/{id}/sessions` | Terurut waktu mulai. Memuat `status` waktu (`upcoming` `ongoing` `finished`), `mode`/`mode_label` (`online`/`offline`), `location`, `schedule_status` (`draft` `scheduled` `cancelled`) beserta labelnya, `participants` (peserta aktif), dan `mentor_name`. |
+| POST | `/courses/{id}/sessions` | `title`, `description?`, `starts_at`, `ends_at` (ISO 8601; diubah ke zona waktu aplikasi), `mode` (`online` bawaan, `offline`), `location?`, `status?` (`draft` `scheduled` `cancelled`), `meeting_url`. |
+| GET / PATCH / DELETE | `/sessions/{id}` | `meeting_url` hanya muncul bagi yang berhak mengelola. |
 | GET | `/sessions/{id}/meeting-link` | Tautan meeting, diambil saat diperlukan (bukan ikut di daftar) |
+
+Aturan sesi:
+
+- **Sesi `online` wajib punya `meeting_url`** dan hanya boleh `http`/`https`. Sesi **`offline` tidak memakai tautan**; `meeting_url` disimpan `null` dan `location` diisi tempat pertemuan.
+- Mengubah sesi menjadi `offline` otomatis mengosongkan tautan lamanya.
+- Membatalkan sesi (`status=cancelled`) mewajibkan `cancellation_reason` (maks. 500 karakter).
+- Jam dan tautan meeting tidak pernah masuk audit log; hanya perubahan tautan yang dicatat sebagai `meeting_url_changed`.
 
 ### Peserta
 
@@ -81,10 +88,16 @@ Aturan file: PDF `pdf`; dokumen `doc docx ppt pptx xls xlsx txt csv`; video `mp4
 | POST | `/courses/{id}/enrollments` | `user_ids` (semua-atau-tidak-sama-sekali; kesalahan per indeks `user_ids.N`) |
 | DELETE | `/enrollments/{id}` | Mencabut (status `cancelled`) |
 
+### Ringkasan dashboard Mentor
+
+| Metode | Path | Keterangan |
+|---|---|---|
+| GET | `/mentor/summary` | Kursus yang diampu pengguna ini beserta jumlah modul/sesi/peserta; `students_total`, `students_active`, `new_students_this_month`, `upcoming_sessions_total`, `upcoming_sessions` (5 terdekat). Semua angka dari database. Butuh `courses.view`. |
+
 ## Audit
 
 Aksi yang dicatat di `/audit-logs`: `course.created`, `course.updated` (nilai sebelum/sesudah), `course.deleted`, `course.mentor_assigned`, serta aksi modul, materi, sesi, dan peserta. Kata sandi dan isi file tidak pernah dicatat.
 
 ## Yang belum ada (tahap berikutnya)
 
-Progres materi, tombol "Gabung sesi" dan kehadiran peserta (Tahap 2b); tugas dan ujian (Tahap 3); Program Lembaga (Tahap 4); XP dan leaderboard (Tahap 5); sertifikat (Tahap 6). Tab Diskusi menunggu keputusan cakupan forum.
+Progres materi, tombol "Gabung sesi" dan kehadiran peserta (Tahap 2b); Program Lembaga (Tahap 4); XP dan leaderboard (Tahap 5); sertifikat (Tahap 6). Tugas, kuis, dan ujian sudah tersedia — lihat `docs/api-tugas.md`. Tab Diskusi menunggu keputusan cakupan forum.
