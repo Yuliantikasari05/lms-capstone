@@ -1,5 +1,6 @@
 import { Eye, EyeOff } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { TermsBox, TermsCheckbox } from '../../components/Terms'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Notice } from '../../components/ui/Notice'
@@ -7,12 +8,19 @@ import { api, toApiError } from '../../lib/api'
 
 type FieldErrors = Record<string, string[]>
 
+interface ChangePasswordFormProps {
+  onChanged?: () => void
+  /** true = tampilkan S&K dan wajib dicentang sebelum kata sandi bisa diganti (layar wajib-ganti). */
+  requireTerms?: boolean
+}
+
 /** Form ganti kata sandi milik sendiri (POST /auth/password). Dipakai di halaman Profil dan layar wajib-ganti. */
-export function ChangePasswordForm({ onChanged }: { onChanged?: () => void }) {
+export function ChangePasswordForm({ onChanged, requireTerms = false }: ChangePasswordFormProps) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const [show, setShow] = useState(false)
+  const [agreed, setAgreed] = useState(false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [general, setGeneral] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -21,9 +29,11 @@ export function ChangePasswordForm({ onChanged }: { onChanged?: () => void }) {
   const firstError = (field: string) => errors[field]?.[0]
   const describedBy = (field: string) => (firstError(field) ? `${field}-help` : undefined)
   const type = show ? 'text' : 'password'
+  const termsPending = requireTerms && !agreed
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
+    if (termsPending) return
     setGeneral(null)
     setDone(false)
 
@@ -96,11 +106,18 @@ export function ChangePasswordForm({ onChanged }: { onChanged?: () => void }) {
         />
       </Field>
 
+      {requireTerms && (
+        <>
+          <TermsBox />
+          <TermsCheckbox checked={agreed} onChange={setAgreed} />
+        </>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" onClick={() => setShow((v) => !v)} icon={show ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}>
           {show ? 'Sembunyikan' : 'Tampilkan'} kata sandi
         </Button>
-        <Button type="submit" loading={submitting}>
+        <Button type="submit" loading={submitting} disabled={termsPending}>
           Ganti Kata Sandi
         </Button>
       </div>
