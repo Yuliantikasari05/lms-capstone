@@ -9,7 +9,9 @@ use App\Models\AuditLog;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
-use App\Support\PermissionCatalog;
+use App\Support\Rbac\Catalog;
+use App\Support\Rbac\RoleMatrix;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,35 +19,42 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Pengaturan > Role & Akses (FR-14): daftar role, matriks izin, role khusus.
- * Baca: permission roles.view. Ubah: roles.manage (diperiksa pada RoleSettingRequest dan rute).
+ * Pengaturan > Role & Akses (FR-14, hi-fi 3.18).
+ * Baca: permission roles.view. Ubah: roles.manage (diperiksa pada rute dan RoleSettingRequest).
  *
- * Pengaman: role Admin dikunci; role bawaan tidak dihapus/diganti nama dan tetap memegang izin dashboard-nya;
- * izin yang hanya untuk Admin (PermissionCatalog::ADMIN_ONLY) tidak bisa diberikan ke role lain.
+ * Prinsip: sakelar di matriks = permission yang benar-benar ditegakkan backend (lihat App\Support\Rbac\Catalog).
+ * Perubahan berlaku seketika (izin dibaca dari database pada tiap request) dan semua akun ber-role itu ikut berubah.
+ *
+ * Pengaman: izin hanya dapat dipasang pada role yang berhak menerimanya; fitur yang belum dibangun tidak dapat dinyalakan;
+ * tiap role wajib mempertahankan izin dasarnya (Admin: dashboard dan pengaturan role, agar tidak terkunci); role bawaan
+ * tidak dapat dihapus atau diganti namanya; role khusus hanya dihapus bila tidak dipakai.
  */
 class RoleSettingsController extends Controller
 {
     public function index()
     {
-        $roles = Role::query()->withCount('users')->withCount('permissions')->orderBy('id')->get();
+        $roles = Role::query()->withCount(['users', 'permissions'])->orderBy('id')->get();
 
         return RoleSettingResource::collection($roles)->additional(['summary' => [
             'total_roles' => $roles->count(),
             'total_users' => User::count(),
-            'custom_roles' => $roles->filter(fn (Role $r) => ! in_array($r->slug, Role::ALL, true))->count(),
+            'custom_roles' => $roles->filter(fn (Role $r) => Catalog::keyOf($r->slug) === Catalog::CUSTOM)->count(),
         ]]);
     }
 
-    public function show(Role $role): RoleSettingResource
+    /** Detail role + matriks C/R/U/D lengkap dengan status tiap sakelar. */
+    public function show(Role $role): JsonResponse
     {
-        return new RoleSettingResource($role->loadCount('users')->load('permissions'));
+        return $this->detail($role);
     }
 
     public function store(RoleSettingRequest $request): JsonResponse
     {
         $data = $request->validated();
         $permissions = array_values($data['permissions'] ?? []);
-        $this->assertGrantable(null, $permissions);
+
+        // Role baru selalu "custom": hanya menerima izin yang tidak bergantung pada kepemilikan data.
+        RoleMatrix::assertValid(new Role(['slug' => 'custom-baru', 'name' => $data['name']]), $permissions);
 
         $role = DB::transaction(function () use ($data, $permissions, $request) {
             $role = Role::create(['slug' => $this->uniqueSlug($data['name']), 'name' => $data['name'], 'description' => $data['description'] ?? null]);
@@ -56,29 +65,23 @@ class RoleSettingsController extends Controller
             return $role;
         });
 
-        return (new RoleSettingResource($role->loadCount('users')->load('permissions')))
-            ->additional(['message' => 'Role berhasil dibuat.'])
-            ->response()
-            ->setStatusCode(201);
+        return $this->detail($role, 201, 'Role berhasil dibuat.');
     }
 
-    public function update(RoleSettingRequest $request, Role $role): RoleSettingResource
+    public function update(RoleSettingRequest $request, Role $role): JsonResponse
     {
         $data = $request->validated();
-        $isSystem = in_array($role->slug, Role::ALL, true);
+        $isSystem = Catalog::keyOf($role->slug) !== Catalog::CUSTOM;
 
-        if ($role->slug === Role::ADMIN) {
-            throw ValidationException::withMessages(['role' => ['Role Admin dikunci dan tidak dapat diubah agar Admin tidak kehilangan aksesnya.']]);
-        }
         if ($isSystem && isset($data['name']) && $data['name'] !== $role->name) {
             throw ValidationException::withMessages(['name' => ['Nama role bawaan tidak dapat diubah.']]);
         }
 
-        $before = ['name' => $role->name, 'description' => $role->description, 'permissions' => $role->permissions()->pluck('slug')->sort()->values()->all()];
+        $before = $this->snapshot($role);
         $permissions = array_key_exists('permissions', $data) ? array_values($data['permissions'] ?? []) : null;
 
         if ($permissions !== null) {
-            $this->assertGrantable($role, $permissions);
+            RoleMatrix::assertValid($role, $permissions);
         }
 
         DB::transaction(function () use ($role, $data, $permissions, $before, $request) {
@@ -88,15 +91,35 @@ class RoleSettingsController extends Controller
                 $role->permissions()->sync(Permission::whereIn('slug', $permissions)->pluck('id'));
             }
 
-            $after = ['name' => $role->name, 'description' => $role->description, 'permissions' => $role->permissions()->pluck('slug')->sort()->values()->all()];
-            $changes = $this->diff($before, $after);
+            $changes = $this->diff($before, $this->snapshot($role));
 
             if ($changes !== []) {
                 AuditLog::record('role.updated', $role, ['role' => $role->name] + $changes, $request);
             }
         });
 
-        return (new RoleSettingResource($role->loadCount('users')->load('permissions')))->additional(['message' => 'Role berhasil diperbarui.']);
+        return $this->detail($role->refresh(), 200, 'Role berhasil diperbarui.');
+    }
+
+    /** Mengembalikan izin role bawaan ke pengaturan awal sistem (tombol "Atur ulang ke bawaan"). */
+    public function reset(Request $request, Role $role): JsonResponse
+    {
+        abort_unless($request->user()?->hasPermission('roles.manage'), 403, 'Anda tidak memiliki izin untuk mengakses sumber daya ini.');
+
+        if (Catalog::keyOf($role->slug) === Catalog::CUSTOM) {
+            throw ValidationException::withMessages(['role' => ['Hanya role bawaan yang dapat diatur ulang ke pengaturan awal.']]);
+        }
+
+        $before = $this->snapshot($role);
+
+        DB::transaction(function () use ($role, $before, $request) {
+            $role->permissions()->sync(Permission::whereIn('slug', RolePermissionSeeder::MATRIX[$role->slug])->pluck('id'));
+
+            $changes = $this->diff($before, $this->snapshot($role));
+            AuditLog::record('role.reset', $role, ['role' => $role->name] + $changes, $request);
+        });
+
+        return $this->detail($role->refresh(), 200, 'Izin role dikembalikan ke pengaturan awal.');
     }
 
     /** Hanya role khusus yang tidak lagi dipakai pengguna mana pun. */
@@ -104,7 +127,7 @@ class RoleSettingsController extends Controller
     {
         abort_unless($request->user()?->hasPermission('roles.manage'), 403, 'Anda tidak memiliki izin untuk mengakses sumber daya ini.');
 
-        if (in_array($role->slug, Role::ALL, true)) {
+        if (Catalog::keyOf($role->slug) !== Catalog::CUSTOM) {
             throw ValidationException::withMessages(['role' => ['Role bawaan tidak dapat dihapus.']]);
         }
 
@@ -122,28 +145,27 @@ class RoleSettingsController extends Controller
         return response()->json(['message' => 'Role berhasil dihapus.']);
     }
 
-    /**
-     * Memeriksa daftar izin yang akan dipasang ($role null = role baru).
-     *
-     * @param  array<int,string>  $permissions
-     */
-    private function assertGrantable(?Role $role, array $permissions): void
+    // ------------------------------------------------------------------ pembantu
+
+    private function detail(Role $role, int $status = 200, ?string $message = null): JsonResponse
     {
-        $adminOnly = array_values(array_filter($permissions, [PermissionCatalog::class, 'isAdminOnly']));
-        if ($adminOnly !== []) {
-            throw ValidationException::withMessages(['permissions' => ['Izin berikut hanya untuk Admin dan tidak dapat diberikan ke role lain: '.implode(', ', $adminOnly).'.']]);
+        $role->loadCount('users')->load('permissions');
+
+        $body = [
+            'data' => (new RoleSettingResource($role))->resolve(),
+            'matrix' => RoleMatrix::forRole($role->slug, $role->permissions->pluck('slug')->all()),
+            'columns' => Catalog::COLUMNS,
+        ];
+        if ($message !== null) {
+            $body['message'] = $message;
         }
 
-        $missing = $role ? array_values(array_diff(PermissionCatalog::requiredFor($role), $permissions)) : [];
-        if ($missing !== []) {
-            throw ValidationException::withMessages(['permissions' => ['Izin berikut wajib tetap dimiliki role bawaan ini: '.implode(', ', $missing).'.']]);
-        }
+        return response()->json($body, $status);
     }
 
     private function uniqueSlug(string $name): string
     {
-        $base = Str::slug($name) ?: 'role';
-        $base = mb_substr($base, 0, 40);
+        $base = mb_substr(Str::slug($name) ?: 'role', 0, 40);
         $slug = $base;
 
         for ($i = 2; in_array($slug, Role::ALL, true) || Role::where('slug', $slug)->exists(); $i++) {
@@ -151,6 +173,12 @@ class RoleSettingsController extends Controller
         }
 
         return $slug;
+    }
+
+    /** @return array{name:string,description:?string,permissions:array<int,string>} */
+    private function snapshot(Role $role): array
+    {
+        return ['name' => $role->name, 'description' => $role->description, 'permissions' => $role->permissions()->pluck('slug')->sort()->values()->all()];
     }
 
     /**

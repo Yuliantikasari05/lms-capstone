@@ -66,17 +66,39 @@ class RolePermissionSeeder extends Seeder
         Role::LEMBAGA => ['dashboard.lembaga'],
     ];
 
+    /**
+     * Aman dijalankan berulang TANPA menimpa pengaturan Admin di Pengaturan > Role & Akses:
+     *  - permission baru dibuat, yang sudah ada hanya diperbarui namanya;
+     *  - role baru mendapat seluruh izin bawaannya;
+     *  - role yang sudah ada HANYA menerima izin bawaan yang baru dibuat pada eksekusi ini (mis. fitur baru),
+     *    sehingga izin yang sengaja dimatikan Admin tidak dinyalakan lagi.
+     * Untuk mengembalikan sebuah role ke bawaan: tombol "Atur ulang" di Pengaturan, atau
+     * `php artisan lms:reset-role-permissions --role=<slug>`.
+     */
     public function run(): void
     {
+        $created = [];
+
         foreach (self::PERMISSIONS as $slug => $name) {
-            Permission::updateOrCreate(['slug' => $slug], ['name' => $name]);
+            $permission = Permission::firstOrNew(['slug' => $slug]);
+
+            if (! $permission->exists) {
+                $created[] = $slug;
+            }
+
+            $permission->name = $name;
+            $permission->save();
         }
 
         foreach (self::ROLES as $slug => $name) {
-            $role = Role::updateOrCreate(['slug' => $slug], ['name' => $name]);
-            $role->permissions()->sync(
-                Permission::whereIn('slug', self::MATRIX[$slug])->pluck('id')
-            );
+            $role = Role::firstOrNew(['slug' => $slug]);
+            $isNew = ! $role->exists;
+            $role->name = $name;
+            $role->save();
+
+            $grant = $isNew ? self::MATRIX[$slug] : array_values(array_intersect(self::MATRIX[$slug], $created));
+
+            $role->permissions()->syncWithoutDetaching(Permission::whereIn('slug', $grant)->pluck('id'));
         }
     }
 }

@@ -19,6 +19,7 @@ Route::prefix('settings')->group(function () {
     Route::middleware('permission:roles.manage')->group(function () {
         Route::post('roles', [RoleSettingsController::class, 'store']);
         Route::patch('roles/{role}', [RoleSettingsController::class, 'update']);
+        Route::post('roles/{role}/reset', [RoleSettingsController::class, 'reset']);
         Route::delete('roles/{role}', [RoleSettingsController::class, 'destroy']);
     });
 });
