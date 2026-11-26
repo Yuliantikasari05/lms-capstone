@@ -74,6 +74,53 @@ php artisan db:seed
 
 Seeder membuat 5 role beserta permission-nya. Akun Admin dibuat sesuai bagian 12.
 
+### 7a. Sinkronisasi izin RBAC (jalankan setelah menarik perubahan)
+
+Kode yang baru ditarik **tidak** otomatis menambah izin di database. Bila sebuah modul (mis. kupon, gamifikasi, lembaga bimbingan, pengaturan role, atau fitur kursus Mentor) belum pernah di-seed, endpoint-nya mengembalikan **403** walaupun policy dan route sudah benar.
+
+Periksa lebih dahulu:
+
+```bash
+php artisan lms:permissions:check       # exit code 1 bila belum sinkron
+```
+
+Perintah ini membandingkan `RolePermissionSeeder` dan katalog RBAC (`App\Support\Rbac\Catalog`) dengan isi tabel `permissions` / `permission_role`, lalu melaporkan:
+
+- izin yang ditegakkan kode tetapi belum ada di database,
+- role bawaan yang belum ada,
+- role yang kehilangan izin wajibnya (mis. Admin tanpa `roles.manage`).
+
+Status ringkasnya juga tersedia tanpa login di `GET /api/v1/health` pada objek `permissions` (`ok`, `missing`, `roles_missing_required`), sehingga masalah ini terlihat sebelum pengguna menemui 403.
+
+Bila terdeteksi belum sinkron:
+
+```bash
+php artisan db:seed --class=RolePermissionSeeder --force
+php artisan lms:reset-role-permissions --role=all --force   # hanya bila izin bawaan role ikut hilang
+```
+
+`RolePermissionSeeder` aman dijalankan berulang: izin baru dibuat dan diberikan ke role bawaan, sedangkan izin yang sengaja dimatikan Admin lewat **Pengaturan > Role & Akses** tidak dinyalakan lagi. Setelah sinkron, pengguna cukup me-refresh halaman karena izin dibaca ulang dari database pada setiap request.
+
+### 7b. Data demo kursus, tugas, dan jadwal (opsional, hanya development)
+
+Halaman Mentor (Kursus Saya, Manajemen Kurikulum, Dashboard, Tugas, Jadwal Bimbingan) membaca data dari database. Untuk mengisi contoh yang saling cocok:
+
+```bash
+php artisan migrate
+php artisan db:seed --class=DemoUserSeeder
+php artisan db:seed --class=DemoCourseSeeder
+php artisan db:seed --class=DemoAssignmentSeeder
+```
+
+- `DemoUserSeeder` membuat akun `@demo.test` (Mentor, Siswa, Karyawan, Lembaga). Kata sandinya dari `DEMO_USER_PASSWORD` di `.env`.
+- `DemoCourseSeeder` membuat 7 kursus beserta modul, materi, sesi, dan peserta untuk Mentor demo (mis. `rina.kusumawati@demo.test`, `bagas.prasetyo@demo.test`). Aman dijalankan berulang: data dicocokkan lewat judul.
+- Sesi demo bergantian **Online** dan **Offline**. Sesi Online memakai tautan dummy `https://meet.google.com/hbk-givp-vaz` (hanya untuk demo); sesi Offline tidak punya tautan dan memakai lokasi ruangan. Saat Mentor membuat sesi sungguhan, tautan asli wajib diisi untuk sesi Online.
+- `DemoAssignmentSeeder` membuat tugas, kuis, dan satu ujian (berstatus **Menunggu persetujuan** Admin) beserta soal dan pengumpulan contoh, sehingga halaman **Tugas** dan tab **Tugas siswa/karyawan** langsung berisi data.
+- Keduanya hanya berjalan di lingkungan `local`/`testing` dan **tidak** dipanggil oleh `db:seed` biasa.
+- Materi demo memakai tautan (tanpa file) dan bertipe `video` bila punya durasi, `link` bila tidak, sesuai aturan API.
+- Hapus data demo kursus lewat `php artisan tinker`: `Course::withTrashed()->whereIn('title', DemoCourseSeeder::titles())->forceDelete();`
+- Hapus data demo tugas: `Assignment::withTrashed()->whereIn('title', DemoAssignmentSeeder::titles())->forceDelete();`
+
 ## 8. Menjalankan Laravel
 
 ```bash
@@ -160,6 +207,7 @@ Akun Karyawan, Mentor, Siswa, dan Lembaga Bimbingan dibuat oleh Admin (melalui `
 - Endpoint pengguna (khusus Admin, berbasis Policy): `GET/POST /api/v1/users`, `GET/PATCH/DELETE /api/v1/users/{id}`, `GET /api/v1/roles`, `GET /api/v1/admin/summary`.
 - Frontend: login/logout/cek sesi lewat API, penanganan 401/403/419 dan backend tidak dapat dihubungi, layout sidebar (Admin) dan top-nav (4 role lain), dashboard, halaman Profil, daftar pengguna (Admin, hanya baca).
 - Dashboard Admin menampilkan data nyata dari database (jumlah pengguna, mentor, login terbaru).
+- Halaman **Kursus Saya** Mentor (`/mentor/courses`) dan detail kursus (`/mentor/courses/:id`) memakai data nyata: `GET /api/v1/courses`, `GET /api/v1/courses/{id}`, dan `GET /api/v1/courses/{id}/modules` (kurikulum + materi, termasuk tautan/berkas materi). Tampilan tidak diubah; data contoh lama hanya dipakai halaman yang belum terhubung (mis. Manajemen Kurikulum Mentor).
 - Automated test backend (health, login berhasil/gagal, logout, profil dengan/tanpa autentikasi, role/permission, pembatasan akses).
 
 **Masih placeholder ("Fitur belum tersedia pada tahap ini")**

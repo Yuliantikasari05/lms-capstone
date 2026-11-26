@@ -94,7 +94,7 @@ class RoleSettingsTest extends TestCase
     {
         $response = $this->asAdmin()->getJson($this->url(Role::MENTOR))->assertOk()
             ->assertJsonPath('data.slug', 'mentor')
-            ->assertJsonPath('data.permissions', ['dashboard.mentor'])
+            ->assertJsonPath('data.permissions', ['assignments.grade', 'assignments.manage', 'assignments.view', 'content.manage', 'courses.create', 'courses.update', 'courses.view', 'dashboard.mentor'])
             ->assertJsonPath('data.required_permissions', ['dashboard.mentor'])
             ->assertJsonPath('columns', ['create', 'read', 'update', 'delete']);
 
@@ -107,7 +107,7 @@ class RoleSettingsTest extends TestCase
         $this->assertSame('Kursus yang Saya Ampu', $courses['label']);
         $this->assertSame('own', $courses['scope']);
         $this->assertSame(['create', 'read', 'update', 'delete'], array_column($courses['cells'], 'action'));
-        $this->assertSame(['off', 'off', 'off', 'na'], array_column($courses['cells'], 'state')); // C R U ada, D khusus Admin
+        $this->assertSame(['on', 'on', 'on', 'na'], array_column($courses['cells'], 'state')); // C R U untuk Mentor, D khusus Admin
 
         $this->asAdmin()->getJson('/api/v1/settings/roles/999999')->assertNotFound();
     }
@@ -158,18 +158,18 @@ class RoleSettingsTest extends TestCase
     public function test_permissions_of_a_system_role_can_be_changed_and_take_effect_immediately(): void
     {
         $mentor = $this->userWithRole(Role::MENTOR);
+        $this->as($mentor)->getJson('/api/v1/courses')->assertOk(); // izin kursus adalah bawaan Mentor
+
+        $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor']])->assertOk()
+            ->assertJsonPath('message', 'Role berhasil diperbarui.')
+            ->assertJsonPath('data.permissions', ['dashboard.mentor'])
+            ->assertJsonPath('data.permissions_count', 1);
+
         $this->as($mentor)->getJson('/api/v1/courses')->assertForbidden();
 
-        $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor', 'courses.view']])->assertOk()
-            ->assertJsonPath('message', 'Role berhasil diperbarui.')
-            ->assertJsonPath('data.permissions', ['courses.view', 'dashboard.mentor'])
-            ->assertJsonPath('data.permissions_count', 2);
+        $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor', 'courses.view']])->assertOk();
 
         $this->as($mentor)->getJson('/api/v1/courses')->assertOk();
-
-        $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor']])->assertOk();
-
-        $this->as($mentor)->getJson('/api/v1/courses')->assertForbidden();
     }
 
     public function test_the_new_permissions_reach_the_frontend_through_auth_me(): void
@@ -249,7 +249,7 @@ class RoleSettingsTest extends TestCase
         $this->assertStringContainsString('tidak berlaku untuk role Mentor', $message);
         $this->assertStringContainsString('coupons.view', $message);
         $this->assertStringContainsString('courses.delete', $message);
-        $this->assertSame(['dashboard.mentor'], $this->permissionsOf(Role::MENTOR));
+        $this->assertSame(collect(RolePermissionSeeder::MATRIX['mentor'])->sort()->values()->all(), $this->permissionsOf(Role::MENTOR));
     }
 
     public function test_the_student_and_employee_roles_only_accept_their_dashboard_for_now(): void
@@ -278,7 +278,7 @@ class RoleSettingsTest extends TestCase
         $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => 'courses.view'])->assertStatus(422)->assertJsonValidationErrors(['permissions']);
         $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor', 'dashboard.mentor']])->assertStatus(422)->assertJsonValidationErrors(['permissions.0']);
 
-        $this->assertSame(['dashboard.mentor'], $this->permissionsOf(Role::MENTOR));
+        $this->assertSame(collect(RolePermissionSeeder::MATRIX['mentor'])->sort()->values()->all(), $this->permissionsOf(Role::MENTOR));
     }
 
     public function test_a_system_role_cannot_be_renamed_or_deleted_but_may_get_a_description(): void
@@ -297,14 +297,17 @@ class RoleSettingsTest extends TestCase
 
     public function test_a_system_role_can_be_reset_to_its_defaults(): void
     {
-        $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor', 'courses.view', 'courses.create', 'content.manage']])->assertOk();
+        $this->asAdmin()->patchJson($this->url(Role::MENTOR), ['permissions' => ['dashboard.mentor', 'courses.view']])->assertOk();
 
         $this->asAdmin()->postJson($this->url(Role::MENTOR, '/reset'))->assertOk()
             ->assertJsonPath('message', 'Izin role dikembalikan ke pengaturan awal.')
-            ->assertJsonPath('data.permissions', ['dashboard.mentor']);
+            ->assertJsonPath('data.permissions', ['assignments.grade', 'assignments.manage', 'assignments.view', 'content.manage', 'courses.create', 'courses.update', 'courses.view', 'dashboard.mentor']);
 
         $log = $this->lastLog('role.reset');
-        $this->assertSame(['content.manage', 'courses.create', 'courses.view'], $log->changes['permissions_removed']);
+        $this->assertSame(
+            ['assignments.grade', 'assignments.manage', 'assignments.view', 'content.manage', 'courses.create', 'courses.update'],
+            $log->changes['permissions_added'],
+        );
     }
 
     public function test_the_admin_role_can_be_reset_to_the_full_default(): void
@@ -454,7 +457,7 @@ class RoleSettingsTest extends TestCase
         $this->as($actor)->postJson($mentorUrl.'/reset')->assertForbidden();
         $this->as($actor)->deleteJson($mentorUrl)->assertForbidden();
 
-        $this->assertSame(['dashboard.mentor'], $this->permissionsOf(Role::MENTOR));
+        $this->assertSame(collect(RolePermissionSeeder::MATRIX['mentor'])->sort()->values()->all(), $this->permissionsOf(Role::MENTOR));
     }
 
     public static function nonAdminRoles(): array
@@ -526,7 +529,7 @@ class RoleSettingsTest extends TestCase
 
         $this->artisan('lms:reset-role-permissions', ['--role' => 'mentor', '--force' => true])->assertSuccessful();
 
-        $this->assertSame(['dashboard.mentor'], $this->permissionsOf(Role::MENTOR));
+        $this->assertSame(['assignments.grade', 'assignments.manage', 'assignments.view', 'content.manage', 'courses.create', 'courses.update', 'courses.view', 'dashboard.mentor'], $this->permissionsOf(Role::MENTOR));
     }
 
     public function test_the_reset_command_validates_its_arguments(): void

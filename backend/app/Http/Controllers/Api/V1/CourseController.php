@@ -39,6 +39,8 @@ class CourseController extends Controller
             ->visibleTo($request->user())
             ->with('mentor')
             ->withCount(['modules', 'sessions', 'activeEnrollments as participants_count'])
+            // Total durasi materi untuk kartu kursus (halaman Kursus Saya Mentor).
+            ->withSum('materials as materials_duration_minutes', 'duration_minutes')
             ->when(filled($filters['q'] ?? null), function (Builder $query) use ($filters) {
                 $like = Like::contains((string) $filters['q']);
                 $query->where(fn (Builder $q) => $q
@@ -155,7 +157,9 @@ class CourseController extends Controller
 
     private function withSummary(Course $course): Course
     {
-        return $course->load('mentor')->loadCount(['modules', 'sessions', 'activeEnrollments as participants_count']);
+        return $course->load('mentor')
+            ->loadCount(['modules', 'sessions', 'activeEnrollments as participants_count'])
+            ->loadSum('materials as materials_duration_minutes', 'duration_minutes');
     }
 
     /** @return array<string,mixed> */

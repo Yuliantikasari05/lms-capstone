@@ -238,7 +238,7 @@ class CourseFoundationTest extends TestCase
 
     // ------------------------------------------------------------------ permission
 
-    public function test_course_permissions_belong_to_admin_only_for_now(): void
+    public function test_course_permissions_belong_to_admin_and_mentor(): void
     {
         $slugs = ['courses.view', 'courses.create', 'courses.update', 'courses.delete', 'courses.assign_mentor', 'content.manage', 'enrollments.manage'];
 
@@ -247,8 +247,16 @@ class CourseFoundationTest extends TestCase
             $this->assertTrue($admin->contains($slug), "Admin harus punya {$slug}.");
         }
 
-        // Diubah saat halaman Mentor/Lembaga dikerjakan (keputusan 8: aturan kepemilikan sudah siap, izinnya belum diberikan).
-        foreach ([Role::MENTOR, Role::SISWA, Role::KARYAWAN, Role::LEMBAGA] as $role) {
+        // Mentor mengelola kursus yang diampu; hapus, ganti Mentor, dan peserta tetap khusus Admin.
+        $mentor = Role::where('slug', Role::MENTOR)->firstOrFail()->permissions->pluck('slug');
+        foreach (self::MENTOR_PERMISSIONS as $slug) {
+            $this->assertTrue($mentor->contains($slug), "Mentor harus punya {$slug}.");
+        }
+        foreach (['courses.delete', 'courses.assign_mentor', 'enrollments.manage'] as $slug) {
+            $this->assertFalse($mentor->contains($slug), "Mentor tidak boleh punya {$slug}.");
+        }
+
+        foreach ([Role::SISWA, Role::KARYAWAN, Role::LEMBAGA] as $role) {
             $permissions = Role::where('slug', $role)->firstOrFail()->permissions->pluck('slug');
             foreach ($slugs as $slug) {
                 $this->assertFalse($permissions->contains($slug), "{$role} belum boleh punya {$slug}.");
@@ -308,6 +316,9 @@ class CourseFoundationTest extends TestCase
 
     public function test_a_mentor_cannot_do_anything_without_the_permissions(): void
     {
+        // Admin dapat mematikan izin kursus Mentor lewat Pengaturan; Policy harus langsung menolak.
+        Role::where('slug', Role::MENTOR)->firstOrFail()->permissions()->detach();
+
         $mentor = $this->userWithRole(Role::MENTOR);
         $own = Course::factory()->mentoredBy($mentor)->create();
 

@@ -6,7 +6,6 @@ use App\Http\Resources\ClassSessionResource;
 use App\Models\AuditLog;
 use App\Models\ClassSession;
 use App\Models\Course;
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -318,11 +317,8 @@ class SessionApiTest extends TestCase
         $this->postJson('/api/v1/courses/1/sessions', [])->assertUnauthorized();
     }
 
-    public function test_a_future_mentor_manages_sessions_only_of_own_courses(): void
+    public function test_a_mentor_manages_sessions_only_of_own_courses(): void
     {
-        Role::where('slug', Role::MENTOR)->firstOrFail()->permissions()->syncWithoutDetaching(
-            Permission::whereIn('slug', ['courses.view', 'courses.update', 'content.manage'])->pluck('id')
-        );
         $own = ClassSession::factory()->create(['course_id' => $this->course->id]);
         $foreignCourse = Course::factory()->active()->mentoredBy($this->userWithRole(Role::MENTOR))->create();
         $foreign = ClassSession::factory()->create(['course_id' => $foreignCourse->id]);

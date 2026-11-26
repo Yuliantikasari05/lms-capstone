@@ -14,7 +14,7 @@ class CourseModule extends Model
     /** @use HasFactory<CourseModuleFactory> */
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['title', 'position'];
+    protected $fillable = ['title', 'description', 'position'];
 
     public function course(): BelongsTo
     {

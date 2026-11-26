@@ -1,15 +1,22 @@
 import { ArrowLeft, CircleHelp, Eye, FileText, GripVertical, Pencil, Plus, Search, ShieldCheck, Trash2, Upload, X, type LucideIcon } from 'lucide-react'
-import { useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react'
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Modal } from '../../components/ui/Modal'
-import { MENTOR_COURSES, courseAudience } from './courseData'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
 import { AssignmentSubmissions } from './AssignmentSubmissions'
 import {
-  getAssignments,
+  createAssignment,
+  deleteAssignment,
+  fetchAssignmentCourses,
+  fetchAssignments,
   setAssignmentActive,
-  subscribeAssignments,
+  updateAssignment,
   type AssignmentPreview,
+  type MentorCourseOption,
   type QuestionKind,
-} from './assignmentData'
+} from './assignmentApi'
+import { courseAudience } from './courseData'
 
 type Audience = 'Siswa' | 'Karyawan'
 type QuestionFormat = 'Mix' | 'Essay' | 'Pilihan ganda' | 'Upload file'
@@ -62,19 +69,25 @@ const FORMAT_STYLE: Record<QuestionFormat, string> = {
 }
 
 export default function MentorTugas() {
-  const assignments = useSyncExternalStore(subscribeAssignments, getAssignments)
+  const assignmentsState = useApiData(fetchAssignments, [])
+  const coursesState = useApiData(fetchAssignmentCourses, [])
+  const assignments = useMemo(() => assignmentsState.data ?? [], [assignmentsState.data])
+  const courses = useMemo(() => coursesState.data ?? [], [coursesState.data])
+  const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses])
   const [audience, setAudience] = useState<'all' | Audience>('all')
   const [kind, setKind] = useState<'all' | QuestionKind>('all')
   const [status, setStatus] = useState<'all' | 'active' | 'inactive' | 'approval'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [notice, setNotice] = useState<string | null>(null)
+  const [noticeTone, setNoticeTone] = useState<'info' | 'error'>('info')
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<AssignmentPreview | null>(null)
   const [activeSection, setActiveSection] = useState<'master' | 'students' | 'employees'>('master')
   const [previewAssignment, setPreviewAssignment] = useState<AssignmentPreview | null>(null)
 
   const filteredAssignments = useMemo(() => assignments.filter((assignment) => {
-    const course = MENTOR_COURSES.find((item) => item.id === assignment.courseId)
+    const course = courseById.get(assignment.courseId)
     const taskAudience = course ? (courseAudience(course.type) === 'siswa' ? 'Siswa' : 'Karyawan') : 'Siswa'
     const matchesSearch = `${assignment.title} ${course?.title ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())
     return matchesSearch
@@ -83,8 +96,9 @@ export default function MentorTugas() {
       && (status === 'all'
         || (status === 'active' && assignment.active)
         || (status === 'inactive' && !assignment.active && assignment.approval === 'Tersedia')
-        || (status === 'approval' && assignment.approval === 'Menunggu persetujuan'))
-  }), [assignments, audience, kind, search, status])
+        || (status === 'approval' && assignment.approval === 'Menunggu persetujuan')
+        || (status === 'approval' && assignment.approval === 'Ditolak'))
+  }), [assignments, audience, courseById, kind, search, status])
 
   const totalPages = Math.max(1, Math.ceil(filteredAssignments.length / PAGE_SIZE))
   const visibleAssignments = filteredAssignments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -97,10 +111,31 @@ export default function MentorTugas() {
     setPage(1)
   }
 
-  const toggleAssignment = (assignment: AssignmentPreview) => {
+  const toggleAssignment = async (assignment: AssignmentPreview) => {
     if (assignment.approval === 'Menunggu persetujuan') return
-    setAssignmentActive(assignment.id, !assignment.active)
-    setNotice(`Soal "${assignment.title}" ${assignment.active ? 'dinonaktifkan' : 'diaktifkan'} pada pratinjau ini.`)
+    try {
+      await setAssignmentActive(assignment.id, !assignment.active)
+      setNoticeTone('info')
+      setNotice(`Soal "${assignment.title}" ${assignment.active ? 'dinonaktifkan' : 'diaktifkan'}.`)
+      assignmentsState.reload()
+    } catch (error) {
+      setNoticeTone('error')
+      setNotice(toApiError(error).message)
+    }
+  }
+
+  const handleDelete = async (assignment: AssignmentPreview) => {
+    if (!window.confirm(`Hapus "${assignment.title}"? Tugas ini tidak lagi tampil untuk peserta.`)) return
+
+    try {
+      await deleteAssignment(assignment.id)
+      setNoticeTone('info')
+      setNotice(`Tugas "${assignment.title}" dihapus.`)
+      assignmentsState.reload()
+    } catch (error) {
+      setNoticeTone('error')
+      setNotice(toApiError(error).message)
+    }
   }
 
   const showActionNotice = (action: 'preview' | 'edit' | 'delete', assignment: AssignmentPreview) => {
@@ -108,26 +143,30 @@ export default function MentorTugas() {
       setPreviewAssignment(assignment)
       return
     }
-    const labels = {
-      edit: `Edit "${assignment.title}"`,
-      delete: `Hapus "${assignment.title}"`,
+    if (action === 'edit') {
+      setEditing(assignment)
+      setCreating(false)
+      return
     }
-    setNotice(`${labels[action]}: aksi ini belum diaktifkan pada prototipe.`)
+    void handleDelete(assignment)
   }
 
   return (
     <div className="space-y-5">
       <nav aria-label="Submenu tugas" className="flex gap-6 border-b border-slate-200">
-        <button type="button" onClick={() => { setActiveSection('master'); setCreating(false) }} aria-current={activeSection === 'master' ? 'page' : undefined} className={`border-b-2 px-1 py-3 text-sm font-semibold ${activeSection === 'master' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+        <button type="button" onClick={() => { setActiveSection('master'); setCreating(false); setEditing(null) }} aria-current={activeSection === 'master' ? 'page' : undefined} className={`border-b-2 px-1 py-3 text-sm font-semibold ${activeSection === 'master' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
           Master tugas
         </button>
-        <button type="button" onClick={() => { setActiveSection('students'); setCreating(false) }} aria-current={activeSection === 'students' ? 'page' : undefined} className={`border-b-2 px-1 py-3 text-sm font-semibold ${activeSection === 'students' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+        <button type="button" onClick={() => { setActiveSection('students'); setCreating(false); setEditing(null) }} aria-current={activeSection === 'students' ? 'page' : undefined} className={`border-b-2 px-1 py-3 text-sm font-semibold ${activeSection === 'students' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
           Tugas siswa
         </button>
-        <button type="button" onClick={() => { setActiveSection('employees'); setCreating(false) }} aria-current={activeSection === 'employees' ? 'page' : undefined} className={`border-b-2 px-1 py-3 text-sm font-semibold ${activeSection === 'employees' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+        <button type="button" onClick={() => { setActiveSection('employees'); setCreating(false); setEditing(null) }} aria-current={activeSection === 'employees' ? 'page' : undefined} className={`border-b-2 px-1 py-3 text-sm font-semibold ${activeSection === 'employees' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
           Tugas karyawan
         </button>
       </nav>
+
+      {assignmentsState.loading && !assignmentsState.data && <Spinner label="Memuat tugas…" />}
+      {assignmentsState.error && <ErrorState error={assignmentsState.error} onRetry={assignmentsState.reload} />}
 
       {activeSection === 'master' ? (
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -136,10 +175,10 @@ export default function MentorTugas() {
             <h1 className="text-base font-semibold text-slate-900">Master tugas</h1>
             <p className="mt-1 text-xs text-slate-500">Kelola soal untuk siswa dan karyawan.</p>
           </div>
-          {!creating && (
+          {!creating && !editing && (
             <button
               type="button"
-              onClick={() => setCreating(true)}
+              onClick={() => { setCreating(true); setEditing(null) }}
               className="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100"
             >
               <Plus className="h-4 w-4" aria-hidden />Tugas baru
@@ -147,8 +186,19 @@ export default function MentorTugas() {
           )}
         </header>
 
-        {creating ? (
-          <NewAssignmentForm onBack={() => setCreating(false)} />
+        {creating || editing ? (
+          <NewAssignmentForm
+            assignment={editing ?? undefined}
+            courses={courses}
+            onBack={() => { setCreating(false); setEditing(null) }}
+            onSaved={(message) => {
+              setCreating(false)
+              setEditing(null)
+              setNoticeTone('info')
+              setNotice(message)
+              assignmentsState.reload()
+            }}
+          />
         ) : (
         <>
         <div className="flex flex-col gap-3 px-4 py-4 sm:px-5 xl:flex-row xl:items-center xl:justify-between">
@@ -192,7 +242,7 @@ export default function MentorTugas() {
         </div>
 
         {notice && (
-          <div role="status" aria-live="polite" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800 sm:mx-5">
+          <div role="status" aria-live="polite" className={`mx-4 mb-3 flex items-start justify-between gap-3 rounded-lg px-3 py-2 text-xs sm:mx-5 ${noticeTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-800'}`}>
             <span>{notice}</span>
             <button type="button" onClick={() => setNotice(null)} aria-label="Tutup pemberitahuan" className="font-semibold hover:underline">Tutup</button>
           </div>
@@ -210,6 +260,7 @@ export default function MentorTugas() {
             <AssignmentRow
               key={assignment.id}
               assignment={assignment}
+              course={courseById.get(assignment.courseId)}
               onToggle={() => toggleAssignment(assignment)}
               onAction={showActionNotice}
             />
@@ -247,7 +298,7 @@ export default function MentorTugas() {
         <AssignmentSubmissions audience="Karyawan" />
       </div>
 
-      <p className="text-center text-[11px] text-slate-400">Pratinjau statis · data soal dan status merupakan contoh.</p>
+      <p className="text-center text-[11px] text-slate-400">Soal dan status tersimpan di server.</p>
       <QuestionPreviewDialog assignment={previewAssignment} onClose={() => setPreviewAssignment(null)} />
     </div>
   )
@@ -260,74 +311,88 @@ function QuestionPreviewDialog({
   assignment: AssignmentPreview | null
   onClose: () => void
 }) {
-  const questionTypes: Exclude<QuestionFormat, 'Mix'>[] = assignment
-    ? assignment.format === 'Mix'
-      ? ['Pilihan ganda', 'Essay', 'Upload file']
-      : [assignment.format]
-    : []
-  const course = assignment && MENTOR_COURSES.find((item) => item.id === assignment.courseId)
-  const sampleQuestions: Record<Exclude<QuestionFormat, 'Mix'>, { prompt: string; options?: string[]; answer: string }> = {
-    'Pilihan ganda': {
-      prompt: 'Manakah pernyataan yang paling tepat sesuai materi pembelajaran?',
-      options: ['Pernyataan A', 'Pernyataan B', 'Pernyataan C', 'Pernyataan D'],
-      answer: 'Pilih satu jawaban yang benar.',
-    },
-    Essay: {
-      prompt: 'Jelaskan penerapan konsep yang telah dipelajari dalam sebuah contoh.',
-      answer: 'Jawaban ditulis pada kolom essay.',
-    },
-    'Upload file': {
-      prompt: 'Unggah hasil pengerjaan sesuai instruksi pada materi.',
-      answer: 'Format PDF · Maksimal 20 MB',
-    },
-  }
+  const questions = assignment?.questions ?? []
 
   return (
     <Modal
       open={assignment !== null}
       title={assignment?.title ?? 'Pratinjau soal'}
-      description={`${assignment?.kind ?? ''} · ${course?.title ?? ''}`}
+      description={`${assignment?.kind ?? ''} · ${assignment?.courseTitle ?? ''}`}
       onClose={onClose}
       size="lg"
     >
       <div className="space-y-3">
-        {questionTypes.map((type, index) => {
-          const sample = sampleQuestions[type]
-          return (
-            <article key={type} className="rounded-xl border border-slate-200 p-4">
-              <header className="flex items-center justify-between gap-3">
-                <h3 className="text-xs font-semibold text-slate-900">Soal {index + 1} · {type}</h3>
-                <span className="text-[10px] text-slate-500">{type === 'Pilihan ganda' ? 10 : 15} poin</span>
-              </header>
-              <p className="mt-3 text-xs leading-5 text-slate-700">{sample.prompt}</p>
-              {sample.options && (
-                <ul className="mt-3 space-y-2">
-                  {sample.options.map((option, optionIndex) => (
-                    <li key={option} className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
-                      <strong className="mr-2">{String.fromCharCode(65 + optionIndex)}.</strong>{option}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[10px] text-slate-500">{sample.answer}</p>
-            </article>
-          )
-        })}
+        {questions.length === 0 && (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] text-slate-500">Belum ada soal pada tugas ini.</p>
+        )}
+        {questions.map((question, index) => (
+          <article key={question.id} className="rounded-xl border border-slate-200 p-4">
+            <header className="flex items-center justify-between gap-3">
+              <h3 className="text-xs font-semibold text-slate-900">Soal {index + 1} · {question.type}</h3>
+              <span className="text-[10px] text-slate-500">{question.points} poin</span>
+            </header>
+            <p className="mt-3 text-xs leading-5 text-slate-700">{question.prompt}</p>
+            {question.options.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {question.options.map((option, optionIndex) => (
+                  <li key={option.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
+                    <strong className="mr-2">{String.fromCharCode(65 + optionIndex)}.</strong>{option.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[10px] text-slate-500">
+              {question.type === 'Essay'
+                ? 'Jawaban ditulis pada kolom essay.'
+                : question.type === 'Upload file'
+                  ? 'Peserta mengunggah berkas sesuai instruksi soal.'
+                  : 'Peserta memilih satu jawaban yang benar.'}
+            </p>
+          </article>
+        ))}
       </div>
     </Modal>
   )
 }
 
-function NewAssignmentForm({ onBack }: { onBack: () => void }) {
-  const [evaluation, setEvaluation] = useState<EvaluationType | ''>('')
-  const [audience, setAudience] = useState<'' | Audience>('')
-  const [courseId, setCourseId] = useState('')
-  const [questions, setQuestions] = useState<QuestionDraft[]>([])
-  const [allowLate, setAllowLate] = useState(false)
+function NewAssignmentForm({
+  assignment,
+  courses,
+  onBack,
+  onSaved,
+}: {
+  assignment?: AssignmentPreview
+  courses: MentorCourseOption[]
+  onBack: () => void
+  onSaved: (message: string) => void
+}) {
+  const initialCourse = courses.find((course) => course.id === assignment?.courseId)
+  const [evaluation, setEvaluation] = useState<EvaluationType | ''>(
+    assignment ? (assignment.kind === 'Ujian' ? 'Ujian' : 'Tugas/Kuis') : '',
+  )
+  const [audience, setAudience] = useState<'' | Audience>(
+    initialCourse ? (courseAudience(initialCourse.type) === 'siswa' ? 'Siswa' : 'Karyawan') : '',
+  )
+  const [courseId, setCourseId] = useState(assignment ? String(assignment.courseId) : '')
+  const [questions, setQuestions] = useState<QuestionDraft[]>(() => (assignment?.questions ?? []).map((question) => ({
+    id: question.id,
+    type: question.type,
+    prompt: question.prompt,
+    options: question.options,
+    correctOptionIds: question.correctOptionIds,
+    multiSelect: false,
+    maxWords: 50,
+    allowedFileTypes: ['PDF'],
+    maxFileSizeMb: 20,
+    maxFiles: 2,
+    score: question.points,
+  })))
+  const [allowLate, setAllowLate] = useState(assignment?.allowLate ?? false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const filteredCourses = audience
-    ? MENTOR_COURSES.filter((course) => (courseAudience(course.type) === 'siswa' ? 'Siswa' : 'Karyawan') === audience)
-    : MENTOR_COURSES
+    ? courses.filter((course) => (courseAudience(course.type) === 'siswa' ? 'Siswa' : 'Karyawan') === audience)
+    : courses
 
   const addQuestion = (type: QuestionType) => {
     const id = Date.now() + questions.length
@@ -353,11 +418,50 @@ function NewAssignmentForm({ onBack }: { onBack: () => void }) {
     setQuestions((current) => current.map((question) => question.id === updatedQuestion.id ? updatedQuestion : question))
   }
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setNotice(evaluation === 'Ujian'
-      ? 'Ujian dikirim ke Admin untuk persetujuan. Soal akan tersedia setelah disetujui.'
-      : 'Tugas/Kuis tersimpan pada pratinjau. Data belum dikirim ke backend.')
+
+    if (questions.length === 0) {
+      setNotice('Tambahkan minimal satu soal sebelum menyimpan.')
+      return
+    }
+    if (!courseId) {
+      setNotice('Pilih kursus terlebih dahulu.')
+      return
+    }
+
+    const form = event.currentTarget
+    const value = (id: string) => (form.querySelector<HTMLInputElement>(`#${id}`)?.value ?? '').trim()
+    const input = {
+      title: value('assignment-title'),
+      description: value('assignment-instructions'),
+      kind: (evaluation === 'Ujian' ? 'Ujian' : 'Tugas') as 'Tugas' | 'Ujian',
+      startsAt: value('assignment-start'),
+      dueAt: value('assignment-deadline'),
+      allowLate,
+      latePenalty: allowLate ? Number(value('assignment-penalty')) || null : null,
+      maxScore: Number(value('assignment-max-score')) || null,
+      questions,
+    }
+
+    setSaving(true)
+    setNotice(null)
+
+    try {
+      if (assignment) {
+        await updateAssignment(assignment.id, input)
+        onSaved(`Tugas "${input.title}" diperbarui.`)
+      } else {
+        await createAssignment(Number(courseId), input)
+        onSaved(evaluation === 'Ujian'
+          ? `Ujian "${input.title}" dikirim ke Admin untuk persetujuan.`
+          : `Tugas "${input.title}" tersimpan.`)
+      }
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -367,9 +471,9 @@ function NewAssignmentForm({ onBack }: { onBack: () => void }) {
           <ArrowLeft className="h-4 w-4" aria-hidden />Kembali
         </button>
         <div className="flex gap-2">
-          <button type="submit" className="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100">
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-60">
             <FileText className="h-4 w-4" aria-hidden />
-            {evaluation === 'Ujian' ? 'Simpan & Ajukan persetujuan' : 'Simpan'}
+            {saving ? 'Menyimpan…' : evaluation === 'Ujian' ? 'Simpan & Ajukan persetujuan' : 'Simpan'}
           </button>
         </div>
       </div>
@@ -379,10 +483,10 @@ function NewAssignmentForm({ onBack }: { onBack: () => void }) {
       <div className="mentor-assignment-layout">
         <div className="min-w-0 space-y-4">
           <FormField label="Judul tugas" htmlFor="assignment-title">
-            <input id="assignment-title" required placeholder="Tuliskan judul tugas Anda" className={FORM_INPUT} />
+            <input id="assignment-title" required defaultValue={assignment?.title ?? ''} placeholder="Tuliskan judul tugas Anda" className={FORM_INPUT} />
           </FormField>
           <FormField label="Deskripsi / instruksi tugas" htmlFor="assignment-instructions">
-            <textarea id="assignment-instructions" required rows={4} placeholder="Tuliskan instruksi umum yang akan dibaca peserta sebelum mengerjakan tugas ini..." className={`${FORM_INPUT} resize-y`} />
+            <textarea id="assignment-instructions" required rows={4} defaultValue={assignment?.description ?? ''} placeholder="Tuliskan instruksi umum yang akan dibaca peserta sebelum mengerjakan tugas ini..." className={`${FORM_INPUT} resize-y`} />
           </FormField>
 
           <section aria-label="Pembuatan soal" className="space-y-3">
@@ -465,10 +569,10 @@ function NewAssignmentForm({ onBack }: { onBack: () => void }) {
             </select>
           </FormField>
           <FormField label="Tanggal mulai" htmlFor="assignment-start">
-            <input id="assignment-start" type="date" required className={FORM_INPUT} />
+            <input id="assignment-start" type="date" required defaultValue={assignment?.startsAt ?? ''} className={FORM_INPUT} />
           </FormField>
           <FormField label="Deadline tugas" htmlFor="assignment-deadline">
-            <input id="assignment-deadline" type="date" required className={FORM_INPUT} />
+            <input id="assignment-deadline" type="date" required defaultValue={assignment?.dueAt ?? ''} className={FORM_INPUT} />
           </FormField>
           <label className="flex items-center justify-between gap-3 py-1 text-xs text-slate-600">
             <span>Terima keterlambatan (nilai dikurangi)</span>
@@ -484,11 +588,11 @@ function NewAssignmentForm({ onBack }: { onBack: () => void }) {
             </button>
           </label>
           <FormField label="Nilai maksimal" htmlFor="assignment-max-score">
-            <input id="assignment-max-score" type="number" min="1" max="100" placeholder="Masukkan nilai" className={FORM_INPUT} />
+            <input id="assignment-max-score" type="number" min="1" max="100" defaultValue={assignment?.maxScore ?? undefined} placeholder="Masukkan nilai" className={FORM_INPUT} />
           </FormField>
           {allowLate && (
             <FormField label="Pengurangan nilai keterlambatan" htmlFor="assignment-penalty">
-              <input id="assignment-penalty" type="number" min="0" max="100" placeholder="Masukkan nilai pengurangan" className={FORM_INPUT} />
+              <input id="assignment-penalty" type="number" min="0" max="100" defaultValue={assignment?.latePenalty ?? undefined} placeholder="Masukkan nilai pengurangan" className={FORM_INPUT} />
             </FormField>
           )}
         </aside>
@@ -726,14 +830,15 @@ function FormField({ label, htmlFor, children }: { label: string; htmlFor: strin
 
 function AssignmentRow({
   assignment,
+  course,
   onToggle,
   onAction,
 }: {
   assignment: AssignmentPreview
+  course?: MentorCourseOption
   onToggle: () => void
   onAction: (action: 'preview' | 'edit' | 'delete', assignment: AssignmentPreview) => void
 }) {
-  const course = MENTOR_COURSES.find((item) => item.id === assignment.courseId)
   const audience: Audience = course && courseAudience(course.type) === 'karyawan' ? 'Karyawan' : 'Siswa'
   const requiresApproval = assignment.approval === 'Menunggu persetujuan'
   const actionButtons = [

@@ -8,15 +8,47 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { courseAudience, MENTOR_COURSES } from './courseData'
+import { ErrorState } from '../../components/ui/States'
+import type { CourseType } from '../../features/courses/types'
+import { api } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import { courseAudience } from './courseData'
 
-// Contoh statis untuk dashboard Mentor sebelum endpoint ringkasan tersedia.
-const SUMMARY = [
-  { label: 'Kelas aktif', value: '5', hint: '4 kelas berjalan', Icon: BookOpen, color: 'blue' },
-  { label: 'Jumlah siswa', value: '127', hint: '110 siswa aktif', Icon: Users, color: 'green' },
-  { label: 'Kelas mendatang', value: '2', hint: 'Kelas terjadwal minggu ini', Icon: CalendarDays, color: 'amber' },
-  { label: 'Pendaftar', value: '15', hint: 'Siswa baru bulan ini', Icon: UserPlus, color: 'orange' },
-] as const
+interface MentorSummaryCourse {
+  id: number
+  title: string
+  type: CourseType
+  modules_count: number
+  sessions_count: number
+  participants_count: number
+}
+
+interface MentorSummary {
+  courses_total: number
+  courses_active: number
+  students_total: number
+  students_active: number
+  new_students_this_month: number
+  upcoming_sessions_total: number
+  courses: MentorSummaryCourse[]
+}
+
+interface SummaryItem {
+  label: string
+  value: string
+  hint: string
+  Icon: LucideIcon
+  color: 'blue' | 'green' | 'amber' | 'orange'
+}
+
+function summaryCards(summary: MentorSummary | null): SummaryItem[] {
+  return [
+    { label: 'Kelas aktif', value: summary ? String(summary.courses_active) : '—', hint: `${summary?.courses_total ?? 0} kelas total`, Icon: BookOpen, color: 'blue' },
+    { label: 'Jumlah siswa', value: summary ? String(summary.students_total) : '—', hint: `${summary?.students_active ?? 0} siswa aktif`, Icon: Users, color: 'green' },
+    { label: 'Kelas mendatang', value: summary ? String(summary.upcoming_sessions_total) : '—', hint: 'Sesi terjadwal', Icon: CalendarDays, color: 'amber' },
+    { label: 'Pendaftar', value: summary ? String(summary.new_students_this_month) : '—', hint: 'Siswa baru bulan ini', Icon: UserPlus, color: 'orange' },
+  ]
+}
 
 const STUDENT_GROUPS = [
   { label: 'Aktif', male: 85, female: 25 },
@@ -45,7 +77,7 @@ function SummaryCard({
   hint,
   Icon,
   color,
-}: (typeof SUMMARY)[number]) {
+}: SummaryItem) {
   const colors = {
     blue: { icon: 'bg-blue-50 text-blue-500', bar: 'bg-blue-500' },
     green: { icon: 'bg-lime-50 text-lime-500', bar: 'bg-lime-500' },
@@ -187,7 +219,7 @@ function QuickActions() {
   )
 }
 
-function MyCourses() {
+function MyCourses({ courses }: { courses: MentorSummaryCourse[] }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -195,35 +227,42 @@ function MyCourses() {
         <Link to="/mentor/courses" className="text-xs font-medium text-brand-700 hover:underline">Lihat semua</Link>
       </div>
       <ul className="space-y-2">
-        {MENTOR_COURSES.slice(0, 3).map((course) => (
-          <li key={course.title} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
+        {courses.slice(0, 3).map((course) => (
+          <li key={course.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-slate-800">{course.title}</p>
-              <p className="mt-1 text-[10px] text-slate-500">{course.modules.length} modul <span className="mx-1">·</span>{course.sessions} sesi</p>
+              <p className="mt-1 text-[10px] text-slate-500">{course.modules_count} modul <span className="mx-1">·</span>{course.sessions_count} sesi</p>
             </div>
-            <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-medium text-indigo-600">{course.students} {courseAudience(course.type)}</span>
+            <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-medium text-indigo-600">{course.participants_count} {courseAudience(course.type)}</span>
           </li>
         ))}
+        {courses.length === 0 && <li className="rounded-lg bg-slate-50 px-3 py-2.5 text-[10px] text-slate-500">Belum ada kursus yang diampu.</li>}
       </ul>
     </section>
   )
 }
 
 export default function MentorDashboard() {
+  const summary = useApiData<MentorSummary>(
+    async () => (await api.get<{ data: MentorSummary }>('/mentor/summary')).data.data,
+    [],
+  )
+
   return (
     <div className="space-y-5">
       <div className="flex justify-end">
-        <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">Data contoh</span>
+        <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">Ringkasan langsung · grafik contoh</span>
       </div>
+      {summary.error && <ErrorState error={summary.error} onRetry={summary.reload} />}
       <section aria-label="Ringkasan Mentor" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {SUMMARY.map((item) => <SummaryCard key={item.label} {...item} />)}
+        {summaryCards(summary.data).map((item) => <SummaryCard key={item.label} {...item} />)}
       </section>
 
       <div className="grid items-start gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
           <StudentProgressChart />
           <QuickActions />
-          <MyCourses />
+          <MyCourses courses={summary.data?.courses ?? []} />
         </div>
         <WeeklyProgressChart />
       </div>

@@ -7,6 +7,10 @@ export interface CourseMaterialPreview {
   type: MaterialType
   durationMinutes: number | null
   xpPoints: number
+  /** Tautan sumber belajar (opsional, dari API kursus). */
+  externalUrl?: string | null
+  /** URL berkas privat materi (opsional, butuh sesi login). */
+  fileUrl?: string | null
 }
 
 export interface CourseModulePreview {
@@ -66,7 +70,8 @@ export interface MentorCoursePreview {
   title: string
   description: string
   type: CourseType
-  rating: number
+  /** null = kursus belum punya ulasan (data ulasan belum tersedia dari API). */
+  rating: number | null
   students: number
   sessions: number
   modules: CourseModulePreview[]

@@ -39,7 +39,7 @@ export default function MentorProfile() {
 
   const userId = user.id
   const totalParticipants = MENTOR_COURSES.reduce((total, course) => total + course.students, 0)
-  const averageRating = MENTOR_COURSES.reduce((total, course) => total + course.rating, 0) / MENTOR_COURSES.length
+  const averageRating = MENTOR_COURSES.reduce((total, course) => total + (course.rating ?? 0), 0) / MENTOR_COURSES.length
   const reviews = MENTOR_COURSES.flatMap((course) =>
     (course.reviews ?? []).map((review) => ({ ...review, courseTitle: course.title })),
   ).slice(0, 3)

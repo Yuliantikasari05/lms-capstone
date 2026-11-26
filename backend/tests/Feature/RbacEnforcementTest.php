@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Assignment;
+use App\Models\AssignmentSubmission;
 use App\Models\ClassSession;
 use App\Models\Coupon;
 use App\Models\Course;
@@ -93,6 +95,20 @@ class RbacEnforcementTest extends TestCase
             ],
             'enrollments.manage' => [fn ($f) => ['GET', "$base/courses/{$f->course->id}/enrollments"], fn ($f) => ['DELETE', "$base/enrollments/{$f->enrollment->id}"]],
 
+            'assignments.view' => [fn ($f) => ['GET', "$base/assignments"], fn ($f) => ['GET', "$base/assignments/{$f->assignment->id}"]],
+            'assignments.manage' => [
+                fn ($f) => ['POST', "$base/courses/{$f->course->id}/assignments", ['title' => 'Tugas Uji', 'kind' => 'task', 'questions' => [['type' => 'essay', 'prompt' => 'Jelaskan.', 'points' => 100]]]],
+                fn ($f) => ['PATCH', "$base/assignments/{$f->assignment->id}", ['title' => 'Tugas Diubah']],
+                fn ($f) => ['PATCH', "$base/assignments/{$f->assignment->id}/activation", ['is_active' => false]],
+                fn ($f) => ['DELETE', "$base/assignments/{$f->assignment->id}"],
+            ],
+            'assignments.grade' => [
+                fn ($f) => ['GET', "$base/assignments/{$f->assignment->id}/submissions"],
+                fn ($f) => ['GET', "$base/submissions/{$f->submission->id}"],
+                fn ($f) => ['PATCH', "$base/submissions/{$f->submission->id}", ['score' => 80]],
+            ],
+            'assignments.review' => [fn ($f) => ['POST', "$base/assignments/{$f->assignment->id}/review", ['decision' => 'approve']]],
+
             'coupons.view' => [fn ($f) => ['GET', "$base/coupons"], fn ($f) => ['GET', "$base/coupons/{$f->coupon->id}"]],
             'coupons.create' => [fn ($f) => ['POST', "$base/coupons", ['code' => 'RBAC'.random_int(100, 999), 'discount_type' => 'percentage', 'discount_value' => 10]]],
             'coupons.update' => [fn ($f) => ['PATCH', "$base/coupons/{$f->coupon->id}", ['name' => 'Diubah']]],
@@ -164,6 +180,15 @@ class RbacEnforcementTest extends TestCase
             'sessions.delete' => [fn ($f) => ['DELETE', "$b/sessions/{$f->session->id}"]],
 
             'assign_mentor.update' => [fn ($f) => ['PUT', "$b/courses/{$f->course->id}/mentor", ['mentor_id' => null]]],
+
+            'exam_review.read' => [fn ($f) => ['POST', "$b/assignments/{$f->assignment->id}/review", ['decision' => 'approve']]],
+            'exam_review.update' => [fn ($f) => ['POST', "$b/assignments/{$f->assignment->id}/review", ['decision' => 'reject', 'note' => 'Perbaiki soal.']]],
+            'assignments.create' => [fn ($f) => ['POST', "$b/courses/{$f->course->id}/assignments", ['title' => 'Tugas Baru', 'kind' => 'task', 'questions' => [['type' => 'essay', 'prompt' => 'Jelaskan.', 'points' => 100]]]]],
+            'assignments.read' => [fn ($f) => ['GET', "$b/assignments"], fn ($f) => ['GET', "$b/assignments/{$f->assignment->id}"]],
+            'assignments.update' => [fn ($f) => ['PATCH', "$b/assignments/{$f->assignment->id}", ['title' => 'Diubah']], fn ($f) => ['PATCH', "$b/assignments/{$f->assignment->id}/activation", ['is_active' => false]]],
+            'assignments.delete' => [fn ($f) => ['DELETE', "$b/assignments/{$f->assignment->id}"]],
+            'grading.read' => [fn ($f) => ['GET', "$b/assignments/{$f->assignment->id}/submissions"]],
+            'grading.update' => [fn ($f) => ['PATCH', "$b/submissions/{$f->submission->id}", ['score' => 90]]],
             'participants.create' => [fn ($f) => ['POST', "$b/courses/{$f->course->id}/enrollments", ['user_ids' => [$f->student->id]]]],
             'participants.read' => [fn ($f) => ['GET', "$b/courses/{$f->course->id}/enrollments"], fn ($f) => ['GET', "$b/courses/{$f->course->id}/enrollment-candidates"]],
             'participants.delete' => [fn ($f) => ['DELETE', "$b/enrollments/{$f->enrollment->id}"]],
@@ -292,6 +317,13 @@ class RbacEnforcementTest extends TestCase
             'module' => $module,
             'material' => Material::factory()->create(['course_module_id' => $module->id]),
             'session' => ClassSession::factory()->create(['course_id' => $course->id]),
+            'assignment' => Assignment::create([
+                'course_id' => $course->id, 'title' => 'Tugas Fixture '.$n, 'kind' => Assignment::KIND_TASK, 'status' => Assignment::STATUS_APPROVED,
+            ]),
+            'submission' => AssignmentSubmission::create([
+                'assignment_id' => Assignment::where('course_id', $course->id)->latest('id')->firstOrFail()->id,
+                'user_id' => $student->id, 'submitted_at' => now(), 'status' => AssignmentSubmission::STATUS_SUBMITTED,
+            ]),
             'enrollment' => Enrollment::factory()->create(['course_id' => $course->id, 'user_id' => $student->id]),
             'coupon' => Coupon::factory()->create(),
             'level' => Level::create(['name' => 'Level Fixture '.$n, 'min_xp' => $n * 1000]),
@@ -472,6 +504,7 @@ class RbacEnforcementTest extends TestCase
             'course' => $f->course->id, 'module' => $f->module->id, 'material' => $f->material->id, 'session' => $f->session->id,
             'enrollment' => $f->enrollment->id, 'coupon' => $f->coupon->id, 'user' => $f->student->id, 'institution' => $f->institution->id,
             'payout' => $f->payout->id, 'role' => $f->customRole->id, 'level' => $f->level->id,
+            'assignment' => $f->assignment->id, 'submission' => $f->submission->id,
         ];
 
         foreach ($names as $name) {
@@ -554,7 +587,9 @@ class RbacEnforcementTest extends TestCase
             $user = $this->userWithRole($roleSlug);
             $this->app['auth']->forgetGuards();
 
-            $this->actingAs($user, 'web')->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('data.permissions', [$slug]);
+            $permissions = $this->actingAs($user, 'web')->getJson('/api/v1/auth/me')->assertOk()->json('data.permissions');
+            $this->assertContains($slug, $permissions);
+            $this->assertEqualsCanonicalizing(Role::where('slug', $roleSlug)->firstOrFail()->permissions->pluck('slug')->all(), $permissions);
         }
     }
 }

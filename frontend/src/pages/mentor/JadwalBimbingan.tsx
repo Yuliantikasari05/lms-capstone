@@ -1,21 +1,24 @@
 import { Ban, CalendarDays, Clock3, ExternalLink, MapPin, Pencil, Plus, Search, Trash2, Users, Video } from 'lucide-react'
-import { useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
-import { useAuth } from '../../auth/AuthContext'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
-import { EmptyState } from '../../components/ui/States'
-import { MENTOR_COURSES } from './courseData'
+import { EmptyState, ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import { courseAudience } from './courseData'
 import { SessionScheduleFields } from './SessionScheduleFields'
 import {
-  SESSION_TYPES,
+  cancelMentorSession,
+  createMentorSession,
   deleteMentorSession,
-  findMentorCourse,
-  getMentorSessions,
-  saveMentorSession,
-  sessionAudience,
-  sessionTypeForCourse,
-  subscribeMentorSessions,
+  fetchMentorSessions,
+  fetchScheduleCourses,
+  updateMentorSession,
+} from './scheduleApi'
+import {
+  SESSION_TYPES,
+  sessionTypeForCourseType,
   type MentorSession,
   type SessionScheduleDetails,
   type SessionStatus,
@@ -23,7 +26,6 @@ import {
 
 const PAGE_SIZE = 5
 type SessionFilter = 'Semua' | SessionScheduleDetails['type']
-const SESSION_COURSES = MENTOR_COURSES.filter((course) => sessionTypeForCourse(course) !== null)
 
 const STATUS_STYLES: Record<SessionStatus, string> = {
   'Sedang berlangsung': 'bg-blue-50 text-blue-700',
@@ -64,8 +66,16 @@ function isHttpUrl(value: string) {
 }
 
 export default function MentorJadwalBimbingan() {
-  const { user } = useAuth()
-  const sessions = useSyncExternalStore(subscribeMentorSessions, getMentorSessions)
+  const sessionsState = useApiData(fetchMentorSessions, [])
+  const coursesState = useApiData(fetchScheduleCourses, [])
+  const sessions = useMemo(() => sessionsState.data ?? [], [sessionsState.data])
+  const courses = useMemo(() => coursesState.data ?? [], [coursesState.data])
+  const sessionCourses = useMemo(
+    () => courses.filter((course) => sessionTypeForCourseType(course.type) !== null),
+    [courses],
+  )
+  const courseById = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses])
+  const [pageError, setPageError] = useState('')
   const [typeFilter, setTypeFilter] = useState<SessionFilter>('Semua')
   const [statusFilter, setStatusFilter] = useState<'Semua status' | SessionStatus>('Semua status')
   const [search, setSearch] = useState('')
@@ -81,23 +91,23 @@ export default function MentorJadwalBimbingan() {
   const [error, setError] = useState('')
 
   const filteredSessions = useMemo(() => sessions.filter((session) => {
-    const course = findMentorCourse(session.courseId)
-    if (!course || sessionTypeForCourse(course) === null) return false
+    const course = courseById.get(session.courseId)
+    if (!course || sessionTypeForCourseType(course.type) === null) return false
     const matchesType = typeFilter === 'Semua' || session.type === typeFilter
     const matchesStatus = statusFilter === 'Semua status' || session.status === statusFilter
     const matchesSearch = `${session.title} ${course?.title ?? ''}`.toLocaleLowerCase('id-ID').includes(search.trim().toLocaleLowerCase('id-ID'))
     return matchesType && matchesStatus && matchesSearch
-  }), [sessions, typeFilter, statusFilter, search])
+  }), [courseById, sessions, typeFilter, statusFilter, search])
 
   const totalPages = Math.max(1, Math.ceil(filteredSessions.length / PAGE_SIZE))
   const visibleSessions = filteredSessions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function openCreateDialog() {
-    const firstCourse = SESSION_COURSES.find((course) => course.id === Number(courseId)) ?? SESSION_COURSES[0]
+    const firstCourse = sessionCourses.find((course) => String(course.id) === courseId) ?? sessionCourses[0]
     setEditingSession(null)
     setCourseId(String(firstCourse?.id ?? ''))
     setTitle('')
-    setDetails(emptyDetails(firstCourse ? sessionTypeForCourse(firstCourse) ?? 'Kelas reguler' : 'Kelas reguler'))
+    setDetails(emptyDetails(firstCourse ? sessionTypeForCourseType(firstCourse.type) ?? 'Kelas reguler' : 'Kelas reguler'))
     setError('')
     setDialogOpen(true)
   }
@@ -121,15 +131,15 @@ export default function MentorJadwalBimbingan() {
 
   function changeCourse(nextCourseId: string) {
     setCourseId(nextCourseId)
-    const course = findMentorCourse(Number(nextCourseId))
-    const type = course ? sessionTypeForCourse(course) : null
+    const course = courseById.get(Number(nextCourseId))
+    const type = course ? sessionTypeForCourseType(course.type) : null
     if (type) setDetails((current) => ({ ...current, type }))
   }
 
-  function saveSession(event: FormEvent<HTMLFormElement>) {
+  async function saveSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const selectedCourse = findMentorCourse(Number(courseId))
-    if (!selectedCourse || sessionTypeForCourse(selectedCourse) === null) {
+    const selectedCourse = courseById.get(Number(courseId))
+    if (!selectedCourse || sessionTypeForCourseType(selectedCourse.type) === null) {
       setError('Pilih kelas atau kurikulum terlebih dahulu.')
       return
     }
@@ -144,18 +154,19 @@ export default function MentorJadwalBimbingan() {
 
     const submitter = (event.nativeEvent as SubmitEvent).submitter
     const status: SessionStatus = submitter instanceof HTMLButtonElement && submitter.value === 'Draft' ? 'Draft' : 'Terjadwal'
-    saveMentorSession({
-      id: editingSession?.id ?? `session-${Date.now()}`,
-      courseId: selectedCourse.id,
-      title: title.trim(),
-      description: '',
-      ...details,
-      status,
-      participants: selectedCourse.students,
-      mentorName: user?.name ?? 'Mentor',
-      ...(editingSession?.moduleId !== undefined ? { moduleId: editingSession.moduleId } : {}),
-    })
-    setDialogOpen(false)
+
+    try {
+      if (editingSession) {
+        await updateMentorSession({ id: editingSession.id, courseId: selectedCourse.id, title: title.trim(), details, status })
+      } else {
+        await createMentorSession({ courseId: selectedCourse.id, title: title.trim(), details, status })
+      }
+      setDialogOpen(false)
+      setPageError('')
+      sessionsState.reload()
+    } catch (saveError) {
+      setError(toApiError(saveError).message)
+    }
   }
 
   function openCancellationDialog(session: MentorSession) {
@@ -164,21 +175,34 @@ export default function MentorJadwalBimbingan() {
     setCancellationError('')
   }
 
-  function cancelSession(event: FormEvent<HTMLFormElement>) {
+  async function cancelSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const reason = cancellationReason.trim()
     if (!cancellingSession || !reason) {
       setCancellationError('Tuliskan alasan pembatalan sesi.')
       return
     }
-    saveMentorSession({
-      ...cancellingSession,
-      status: 'Dibatalkan',
-      cancellationReason: reason,
-    })
-    setCancellingSession(null)
-    setCancellationReason('')
-    setCancellationError('')
+
+    try {
+      await cancelMentorSession(cancellingSession.id, reason)
+      setCancellingSession(null)
+      setCancellationReason('')
+      setCancellationError('')
+      setPageError('')
+      sessionsState.reload()
+    } catch (cancelError) {
+      setCancellationError(toApiError(cancelError).message)
+    }
+  }
+
+  async function removeSession(session: MentorSession) {
+    try {
+      await deleteMentorSession(session.id)
+      setPageError('')
+      sessionsState.reload()
+    } catch (deleteError) {
+      setPageError(toApiError(deleteError).message)
+    }
   }
 
   function handleTypeFilter(value: SessionFilter) {
@@ -193,6 +217,9 @@ export default function MentorJadwalBimbingan() {
 
   return (
     <div className="space-y-5">
+      {pageError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{pageError}</p>}
+      {sessionsState.loading && !sessionsState.data && <Spinner label="Memuat jadwal bimbingan…" />}
+      {sessionsState.error && <ErrorState error={sessionsState.error} onRetry={sessionsState.reload} />}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <header className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5">
           <div>
@@ -249,7 +276,7 @@ export default function MentorJadwalBimbingan() {
         ) : (
           <div className="grid gap-5 p-4 sm:grid-cols-2 sm:px-5 xl:grid-cols-3">
             {visibleSessions.map((session) => {
-              const course = findMentorCourse(session.courseId)
+              const course = courseById.get(session.courseId)
               const date = formatSessionDay(session.date)
               const joinUrlIsValid = session.mode === 'Online' && isHttpUrl(session.meetingLink)
               const canJoin = joinUrlIsValid && ['Sedang berlangsung', 'Terjadwal'].includes(session.status)
@@ -275,7 +302,7 @@ export default function MentorJadwalBimbingan() {
 
                     <div className="mt-3 space-y-2 border-y border-slate-100 py-3 text-[11px] text-slate-500">
                       <span className="flex items-center gap-2"><Clock3 className="h-4 w-4 shrink-0" aria-hidden />{formatSessionDate(session.date)} · {session.startTime}–{session.endTime}</span>
-                      <span className="flex items-center gap-2"><Users className="h-4 w-4 shrink-0" aria-hidden />{session.participants} {sessionAudience(session.courseId)}</span>
+                      <span className="flex items-center gap-2"><Users className="h-4 w-4 shrink-0" aria-hidden />{session.participants} {course ? courseAudience(course.type) : 'peserta'}</span>
                       {session.mode === 'Offline' ? (
                         <span className="flex items-center gap-2"><MapPin className="h-4 w-4 shrink-0" aria-hidden />{session.location || 'Lokasi belum ditambahkan'}</span>
                       ) : (
@@ -308,7 +335,7 @@ export default function MentorJadwalBimbingan() {
                         <button type="button" onClick={() => openEditDialog(session)} aria-label={`Edit sesi ${session.title}`} title="Edit sesi" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                           <Pencil className="h-4 w-4" aria-hidden />
                         </button>
-                        <button type="button" onClick={() => deleteMentorSession(session.id)} aria-label={`Hapus sesi ${session.title}`} title="Hapus sesi" className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                        <button type="button" onClick={() => void removeSession(session)} aria-label={`Hapus sesi ${session.title}`} title="Hapus sesi" className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
                           <Trash2 className="h-4 w-4" aria-hidden />
                         </button>
                       </div>
@@ -354,7 +381,7 @@ export default function MentorJadwalBimbingan() {
           <Field id="mentor-session-course" label="Kelas / Kurikulum">
             <select id="mentor-session-course" value={courseId} onChange={(event) => changeCourse(event.target.value)} className={inputClass()} required data-autofocus>
               <option value="">Pilih kelas atau kurikulum</option>
-              {SESSION_COURSES.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+              {sessionCourses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
             </select>
           </Field>
           <Field id="mentor-session-title" label="Judul sesi">

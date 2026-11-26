@@ -130,13 +130,23 @@ final class Catalog
             self::planned('curriculum', 'discussions', 'Kelola Diskusi dan Komentar', 'Menyetujui atau menghapus komentar dan diskusi pengguna.', [
                 self::ADMIN => ['create', 'read', 'update', 'delete'], self::MENTOR => ['create', 'read', 'update', 'delete'], self::LEMBAGA => ['create', 'read', 'update', 'delete'],
             ], $planned),
-            self::planned('curriculum', 'exam_review', 'Review Soal Ujian', 'Menyetujui pengajuan soal ujian dari Mentor (FR-11).', [self::ADMIN => ['read', 'update']], $planned),
+            self::act('curriculum', 'exam_review', 'Review Soal Ujian', 'Menyetujui atau menolak pengajuan soal ujian dari Mentor (FR-11).', [
+                'read' => ['assignments.review', $A], 'update' => ['assignments.review', $A],
+            ]),
             self::planned('curriculum', 'certification', 'Sertifikasi Karyawan', 'Memproses pengajuan sertifikasi Karyawan (FR-12).', [self::ADMIN => ['read', 'update']], $planned),
 
-            // ------------------------------------------------------------------ Mentor: siswa, tugas, ujian (belum dibangun)
+            // ------------------------------------------------------------------ Mentor: siswa, tugas, ujian
             self::planned('students', 'mentor_students', 'Siswa yang Diampu', 'Melihat profil dan progres belajar siswa/karyawan yang diampu (FR-32).', [self::MENTOR => ['read']], $planned),
-            self::planned('assessment', 'assignments', 'Master Tugas dan Ujian', 'Membuat tugas atau ujian untuk siswa/karyawan (FR-33).', [self::MENTOR => ['create', 'read', 'update', 'delete']], $planned),
-            self::planned('assessment', 'grading', 'Penilaian dan Feedback', 'Menilai tugas/ujian dan memberi feedback (FR-34).', [self::MENTOR => ['read', 'update']], $planned),
+            self::act('assessment', 'assignments', 'Master Tugas dan Ujian', 'Membuat tugas atau ujian untuk siswa/karyawan (FR-33).', [
+                'create' => ['assignments.manage', [self::ADMIN, self::MENTOR]],
+                'read' => ['assignments.view', [self::ADMIN, self::MENTOR]],
+                'update' => ['assignments.manage', [self::ADMIN, self::MENTOR]],
+                'delete' => ['assignments.manage', [self::ADMIN, self::MENTOR]],
+            ], own: [self::MENTOR]),
+            self::act('assessment', 'grading', 'Penilaian dan Feedback', 'Menilai tugas/ujian dan memberi feedback (FR-34).', [
+                'read' => ['assignments.grade', [self::ADMIN, self::MENTOR]],
+                'update' => ['assignments.grade', [self::ADMIN, self::MENTOR]],
+            ], own: [self::MENTOR]),
 
             // ------------------------------------------------------------------ Siswa dan Karyawan (belum dibangun)
             self::planned('learning', 'schedule', 'Jadwal dan Deadline', 'Melihat jadwal tugas, bimbingan, dan deadline (FR-37).', [self::SISWA => ['read']], $planned),

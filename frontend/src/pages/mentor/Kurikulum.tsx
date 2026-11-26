@@ -13,91 +13,44 @@ import {
   Plus,
   Search,
   Trash2,
-  Upload,
   Users,
   Video,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import { fetchAssignments } from './assignmentApi'
 import {
-  MENTOR_COURSES,
-  courseAllowsXp,
-  courseAudience,
-  type CourseDiscussionPreview,
-  type MentorCoursePreview,
-} from './courseData'
-import { getAssignments, subscribeAssignments } from './assignmentData'
+  createMaterial,
+  createModule,
+  createSession,
+  fetchCurriculum,
+  materialTypeFor,
+  removeMaterial,
+  removeModule,
+  removeSession,
+  updateMaterial,
+  updateModule,
+  updateSession,
+  type CurriculumClass,
+  type CurriculumDiscussion,
+  type CurriculumItem,
+  type CurriculumItemType,
+  type CurriculumModule,
+  type ItemPublicationStatus,
+} from './curriculumApi'
 import { SessionScheduleFields } from './SessionScheduleFields'
-import {
-  getMentorSessions,
-  deleteMentorSession,
-  saveMentorSession,
-  sessionTypeForCourse,
-  type MentorSession,
-  type SessionScheduleDetails,
-} from './sessionData'
+import type { SessionScheduleDetails } from './sessionData'
 
-type CurriculumItemType = 'materi' | 'tugas' | 'ujian' | 'sesi'
 type ItemSelection = CurriculumItemType
 type ItemWizardStep = 1 | 2 | 3
 type CurriculumTab = 'modul' | 'sesi' | 'materi' | 'diskusi'
-type ItemPublicationStatus = 'draft' | 'published'
-
-interface CurriculumItem {
-  id: string
-  title: string
-  description: string
-  type: CurriculumItemType
-  status: ItemPublicationStatus
-  xpPoints: number
-  detail: string
-  assignmentId?: number
-  materialFormat?: string
-  durationMinutes?: number
-  resource?: string
-  attachment?: File
-  sessionId?: string
-  meetingLink?: string
-  date?: string
-  startTime?: string
-  endTime?: string
-  sessionType?: SessionScheduleDetails['type']
-  mode?: SessionScheduleDetails['mode']
-  location?: string
-}
-
-interface CurriculumModule {
-  id: number
-  title: string
-  description: string
-  items: CurriculumItem[]
-  expanded: boolean
-}
-
-interface CurriculumClass {
-  id: number
-  sourceCourseId: number
-  title: string
-  description: string
-  audience: 'Siswa' | 'Karyawan'
-  students: number
-  modules: CurriculumModule[]
-  discussions: {
-    id: string
-    title: string
-    author: string
-    role: CourseDiscussionPreview['role']
-    date: string
-    message: string
-    replyCount: number
-    likes: number
-  }[]
-}
 
 interface ModuleDialogState {
   classId: number
@@ -110,7 +63,6 @@ interface ItemDialogState {
   itemId?: string
 }
 
-const INITIAL_COURSE_IDS = [1, 3, 4]
 const ITEM_TYPES: { type: CurriculumItemType; label: string; icon: LucideIcon }[] = [
   { type: 'materi', label: 'Materi', icon: BookOpen },
   { type: 'tugas', label: 'Tugas', icon: ClipboardList },
@@ -139,123 +91,36 @@ const ITEM_STYLES: Record<CurriculumItemType, string> = {
   sesi: 'bg-emerald-50 text-emerald-700',
 }
 
-function createClass(course: MentorCoursePreview, id: number): CurriculumClass {
-  const courseSessions = getMentorSessions().filter((session) => session.courseId === course.id)
-  const modules = course.modules.map((module, index) => {
-    const items: CurriculumItem[] = module.materials.map((material) => {
-      const materialFormat = material.type === 'pdf' ? 'PDF' : material.type === 'document' ? 'PPTX' : 'Video'
-      const extension = material.type === 'pdf' ? 'pdf' : material.type === 'document' ? 'pptx' : ''
-      return {
-        id: `material-${course.id}-${material.id}`,
-        title: material.title,
-        description: material.description,
-        type: 'materi',
-        status: 'published',
-        xpPoints: material.xpPoints,
-        detail: material.type === 'video'
-          ? `Video · ${material.durationMinutes ?? 0} menit`
-          : `${materialFormat} · ${material.durationMinutes ?? 0} menit`,
-        materialFormat,
-        ...(extension ? { resource: `${material.title}.${extension}` } : {}),
-      }
-    })
-    for (const attachment of module.supportingMaterials ?? []) {
-      items.push({
-        id: `attachment-${course.id}-${attachment.id}`,
-        title: attachment.name,
-        description: `Materi pendukung modul ${module.title}.`,
-        type: 'materi',
-        status: 'published',
-        xpPoints: 0,
-        detail: `${attachment.format} · ${attachment.size}`,
-        materialFormat: attachment.format,
-        resource: attachment.name,
-      })
-    }
-    for (const activity of module.activities ?? []) {
-      items.push({
-        id: `activity-${course.id}-${activity.id}`,
-        title: activity.title,
-        description: `Evaluasi pembelajaran pada modul ${module.title}.`,
-        type: activity.type === 'tugas' ? 'tugas' : 'ujian',
-        status: 'published',
-        xpPoints: activity.xpPoints,
-        detail: activity.type === 'tugas' ? 'Tugas' : 'Evaluasi',
-      })
-    }
-
-    if (index === 0) {
-      for (let session = 0; session < Math.max(course.sessions, courseSessions.length); session += 1) {
-        const scheduledSession = courseSessions[session]
-        items.push({
-          id: scheduledSession?.id ?? `session-${course.id}-${session + 1}`,
-          sessionId: scheduledSession?.id,
-          title: scheduledSession?.title ?? `Sesi bimbingan ${session + 1}`,
-          description: `Diskusi dan pendampingan peserta untuk ${module.title}.`,
-          type: 'sesi',
-          status: scheduledSession?.status === 'Draft' ? 'draft' : 'published',
-          xpPoints: 0,
-          detail: scheduledSession ? `${scheduledSession.startTime}–${scheduledSession.endTime} · ${scheduledSession.mode}` : 'Jadwal akan ditentukan',
-          ...(scheduledSession ? {
-            date: scheduledSession.date,
-            startTime: scheduledSession.startTime,
-            endTime: scheduledSession.endTime,
-            sessionType: scheduledSession.type,
-            mode: scheduledSession.mode,
-            location: scheduledSession.location,
-            meetingLink: scheduledSession.meetingLink,
-          } : {}),
-        })
-      }
-    }
-
-    return {
-      id: module.id,
-      title: module.title,
-      description: module.description,
-      items,
-      expanded: index === 0,
-    }
-  })
-
-  return {
-    id,
-    sourceCourseId: course.id,
-    title: course.title,
-    description: course.description,
-    audience: courseAudience(course.type) === 'siswa' ? 'Siswa' : 'Karyawan',
-    students: course.students,
-    modules,
-    discussions: course.discussions.map((discussion) => ({
-      id: `discussion-${course.id}-${discussion.id}`,
-      title: discussion.title,
-      author: discussion.name,
-      role: discussion.role,
-      date: discussion.date,
-      message: discussion.message,
-      replyCount: discussion.replies.length,
-      likes: discussion.likes ?? 0,
-    })),
-  }
-}
-
-const INITIAL_CLASSES = INITIAL_COURSE_IDS.flatMap((courseId, index) => {
-  const course = MENTOR_COURSES.find((item) => item.id === courseId)
-  return course ? [createClass(course, index + 1)] : []
-})
-
 export default function MentorKurikulum() {
-  const { user } = useAuth()
-  const [classes, setClasses] = useState(INITIAL_CLASSES)
+  const curriculum = useApiData(fetchCurriculum, [])
+  const [classes, setClasses] = useState<CurriculumClass[]>([])
   const [expandedClassId, setExpandedClassId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<CurriculumTab>('modul')
   const [search, setSearch] = useState('')
   const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
   const [moduleDialog, setModuleDialog] = useState<ModuleDialogState | null>(null)
   const [moduleTitle, setModuleTitle] = useState('')
   const [moduleDescription, setModuleDescription] = useState('')
+  const [moduleError, setModuleError] = useState('')
   const [itemDialog, setItemDialog] = useState<ItemDialogState | null>(null)
   const [previewMaterial, setPreviewMaterial] = useState<CurriculumItem | null>(null)
+
+  // Data server adalah sumber kebenaran; status buka/tutup modul tetap dipertahankan saat reload.
+  useEffect(() => {
+    if (!curriculum.data) return
+
+    setClasses((previous) => curriculum.data!.map((next) => {
+      const old = previous.find((item) => item.id === next.id)
+      return {
+        ...next,
+        modules: next.modules.map((module) => ({
+          ...module,
+          expanded: old?.modules.find((item) => item.id === module.id)?.expanded ?? module.expanded,
+        })),
+      }
+    }))
+  }, [curriculum.data])
 
   const filteredClasses = useMemo(() => classes.filter((item) =>
     `${item.title} ${item.description}`.toLowerCase().includes(search.trim().toLowerCase()),
@@ -265,145 +130,114 @@ export default function MentorKurikulum() {
     setModuleDialog({ classId })
     setModuleTitle('')
     setModuleDescription('')
+    setModuleError('')
   }
 
   function openEditModule(classId: number, module: CurriculumModule) {
     setModuleDialog({ classId, moduleId: module.id })
     setModuleTitle(module.title)
     setModuleDescription(module.description)
+    setModuleError('')
   }
 
-  function saveModule(event: FormEvent<HTMLFormElement>) {
+  async function saveModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!moduleDialog || !moduleTitle.trim()) return
     const title = moduleTitle.trim()
     const description = moduleDescription.trim()
+    setModuleError('')
 
-    setClasses((current) => current.map((item) => {
-      if (item.id !== moduleDialog.classId) return item
+    try {
       if (moduleDialog.moduleId !== undefined) {
-        return {
-          ...item,
-          modules: item.modules.map((module) =>
-            module.id === moduleDialog.moduleId ? { ...module, title, description } : module,
-          ),
-        }
+        await updateModule(moduleDialog.moduleId, { title, description })
+      } else {
+        await createModule(moduleDialog.classId, { title, description })
       }
-      return {
-        ...item,
-        modules: [...item.modules, {
-          id: Date.now(),
-          title,
-          description,
-          items: [],
-          expanded: true,
-        }],
-      }
-    }))
-    setNotice(moduleDialog.moduleId ? `Modul "${title}" diperbarui.` : `Modul "${title}" ditambahkan.`)
-    setExpandedClassId(moduleDialog.classId)
-    setActiveTab('modul')
-    setModuleDialog(null)
+      setNotice(moduleDialog.moduleId ? `Modul "${title}" diperbarui.` : `Modul "${title}" ditambahkan.`)
+      setExpandedClassId(moduleDialog.classId)
+      setActiveTab('modul')
+      setModuleDialog(null)
+      curriculum.reload()
+    } catch (failure) {
+      setModuleError(toApiError(failure).message)
+    }
   }
 
-  function removeModule(classId: number, module: CurriculumModule) {
-    const removedModule = classes.find((item) => item.id === classId)?.modules.find((item) => item.id === module.id)
-    removedModule?.items.forEach((item) => {
-      if (item.type === 'sesi' && item.sessionId) deleteMentorSession(item.sessionId)
-    })
-    setClasses((current) => current.map((item) =>
-      item.id === classId ? { ...item, modules: item.modules.filter((value) => value.id !== module.id) } : item,
-    ))
-    setNotice(`Modul "${module.title}" dihapus dari pratinjau.`)
+  async function deleteModule(module: CurriculumModule) {
+    setError('')
+
+    try {
+      await removeModule(module.id)
+      setNotice(`Modul "${module.title}" dihapus.`)
+      curriculum.reload()
+    } catch (failure) {
+      setError(toApiError(failure).message)
+    }
   }
 
   function openItemDialog(classId: number, moduleId: number, item?: CurriculumItem) {
     setItemDialog({ classId, moduleId, itemId: item?.id })
   }
 
-  function saveItems(dialog: ItemDialogState, addedItems: CurriculumItem[]) {
+  async function saveItems(dialog: ItemDialogState, addedItems: CurriculumItem[]): Promise<string | null> {
+    const next = addedItems[0]
     const curriculumClass = classes.find((item) => item.id === dialog.classId)
-    const sourceCourse = MENTOR_COURSES.find((course) => course.id === curriculumClass?.sourceCourseId)
-    const oldItem = curriculumClass?.modules.find((module) => module.id === dialog.moduleId)?.items.find((item) => item.id === dialog.itemId)
-    if (oldItem?.type === 'sesi' && oldItem.sessionId && !addedItems.some((item) => item.type === 'sesi')) {
-      deleteMentorSession(oldItem.sessionId)
+    const oldItem = curriculumClass?.modules
+      .find((module) => module.id === dialog.moduleId)
+      ?.items.find((item) => item.id === dialog.itemId)
+
+    if (!next || !curriculumClass) return 'Item tidak dapat disimpan.'
+
+    if (next.type !== 'materi' && next.type !== 'sesi') {
+      return 'Tugas dan ujian belum tersedia dari server. Kelola lewat menu Tugas.'
     }
-    if (sourceCourse && curriculumClass) {
-      addedItems.filter((item) => item.type === 'sesi').forEach((item) => {
-        const existingSession = getMentorSessions().find((session) => session.id === item.sessionId)
-        const session: MentorSession = {
-          id: item.sessionId ?? item.id,
-          courseId: sourceCourse.id,
-          moduleId: dialog.moduleId,
-          title: item.title,
-          description: item.description,
-          date: item.date ?? '',
-          startTime: item.startTime ?? '13:00',
-          endTime: item.endTime ?? '14:00',
-          type: item.sessionType ?? sessionTypeForCourse(sourceCourse) ?? 'Kelas reguler',
-          mode: item.mode ?? 'Online',
-          location: item.location ?? '',
-          meetingLink: item.meetingLink ?? '',
-          status: item.status === 'draft' ? 'Draft' : 'Terjadwal',
-          participants: existingSession?.participants ?? curriculumClass.students,
-          mentorName: existingSession?.mentorName ?? user?.name ?? 'Mentor',
-        }
-        saveMentorSession(session)
-      })
+
+    if (next.type === 'sesi' && !next.meetingLink) {
+      return 'Link meeting wajib diisi untuk sesi bimbingan.'
     }
-    setClasses((current) => current.map((value) => value.id !== dialog.classId
-      ? value
-      : {
-          ...value,
-          modules: value.modules.map((module) => {
-            if (module.id !== dialog.moduleId) return module
-            const items = dialog.itemId
-              ? module.items.flatMap((existing) => existing.id === dialog.itemId ? addedItems : [existing])
-              : [...module.items, ...addedItems]
-            return { ...module, items }
-          }),
-        }))
-    const updatedItems = dialog.itemId ? 'Item diperbarui' : `${addedItems.length} item ditambahkan`
-    setNotice(`${updatedItems} pada pratinjau.`)
+
+    try {
+      // Tipe item tidak dapat diubah di tempat: hapus dulu bila pengguna mengganti jenisnya.
+      if (oldItem?.materialId && next.type !== 'materi') await removeMaterial(oldItem.materialId)
+      if (oldItem?.sessionId && next.type !== 'sesi') await removeSession(oldItem.sessionId)
+
+      if (next.type === 'materi') {
+        const replaceMaterial = oldItem?.materialId
+          && oldItem.materialType !== materialTypeFor(next)
+          && Boolean(next.attachment || next.externalUrl)
+
+        if (replaceMaterial && oldItem.materialId) await removeMaterial(oldItem.materialId)
+        if (oldItem?.materialId && !replaceMaterial) await updateMaterial(oldItem.materialId, next)
+        else await createMaterial(dialog.moduleId, next)
+      } else if (oldItem?.sessionId) {
+        await updateSession(oldItem.sessionId, next)
+      } else {
+        await createSession(dialog.classId, next)
+      }
+    } catch (failure) {
+      return toApiError(failure).message
+    }
+
+    setNotice(dialog.itemId ? 'Item diperbarui.' : 'Item ditambahkan.')
     setExpandedClassId(dialog.classId)
-    setActiveTab(addedItems.some((item) => item.type === 'materi') ? 'materi' : addedItems.some((item) => item.type === 'sesi') ? 'sesi' : 'modul')
+    setActiveTab(next.type === 'materi' ? 'materi' : 'sesi')
     setItemDialog(null)
+    curriculum.reload()
+
+    return null
   }
 
-  function removeItem(classId: number, moduleId: number, item: CurriculumItem) {
-    if (item.type === 'sesi' && item.sessionId) deleteMentorSession(item.sessionId)
-    setClasses((current) => current.map((value) => value.id !== classId
-      ? value
-      : {
-          ...value,
-          modules: value.modules.map((module) => module.id === moduleId
-            ? { ...module, items: module.items.filter((existing) => existing.id !== item.id) }
-            : module),
-        }))
-    setNotice(`Item "${item.title}" dihapus dari pratinjau.`)
-  }
+  async function deleteItem(item: CurriculumItem) {
+    setError('')
 
-  function publishModule(classId: number, moduleId: number) {
-    const module = classes.find((item) => item.id === classId)?.modules.find((item) => item.id === moduleId)
-    const publishedCount = module?.items.filter((item) => item.status === 'draft').length ?? 0
-    if (publishedCount === 0) return
-    module?.items.filter((item) => item.type === 'sesi' && item.status === 'draft' && item.sessionId).forEach((item) => {
-      const session = getMentorSessions().find((value) => value.id === item.sessionId)
-      if (session) saveMentorSession({ ...session, status: 'Terjadwal' })
-    })
-    setClasses((current) => current.map((item) => item.id !== classId
-      ? item
-      : {
-          ...item,
-          modules: item.modules.map((module) => {
-            if (module.id !== moduleId) return module
-            return {
-              ...module,
-              items: module.items.map((content) => ({ ...content, status: 'published' })),
-            }
-          }),
-        }))
-    setNotice(`${publishedCount} item berhasil dipublish pada pratinjau.`)
+    try {
+      if (item.materialId) await removeMaterial(item.materialId)
+      else if (item.sessionId) await removeSession(item.sessionId)
+      setNotice(`Item "${item.title}" dihapus.`)
+      curriculum.reload()
+    } catch (failure) {
+      setError(toApiError(failure).message)
+    }
   }
 
   function toggleModule(classId: number, moduleId: number) {
@@ -451,7 +285,17 @@ export default function MentorKurikulum() {
         </div>
       )}
 
-      {filteredClasses.length === 0 ? (
+      {error && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError('')} aria-label="Tutup pesan kesalahan" className="font-semibold hover:underline">Tutup</button>
+        </div>
+      )}
+
+      {curriculum.loading && !curriculum.data && <Spinner label="Memuat kurikulum…" />}
+      {curriculum.error && <ErrorState error={curriculum.error} onRetry={curriculum.reload} />}
+
+      {curriculum.data !== null && !curriculum.error && (filteredClasses.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center">
           <GraduationCap className="mx-auto h-9 w-9 text-slate-300" aria-hidden />
           <p className="mt-2 text-sm font-semibold text-slate-700">{search ? 'Kurikulum tidak ditemukan' : 'Belum ada kurikulum dari Admin'}</p>
@@ -465,7 +309,7 @@ export default function MentorKurikulum() {
               curriculumClass={item}
               expanded={expandedClassId === item.id}
               activeTab={activeTab}
-              allowXp={item.audience === 'Siswa' && courseAllowsXp(MENTOR_COURSES.find((course) => course.id === item.sourceCourseId) ?? MENTOR_COURSES[0])}
+              allowXp={item.allowsXp}
               onToggle={() => {
                 setExpandedClassId((current) => current === item.id ? null : item.id)
                 setActiveTab('modul')
@@ -473,19 +317,18 @@ export default function MentorKurikulum() {
               onAddModule={() => openAddModule(item.id)}
               onTabChange={setActiveTab}
               onEditModule={(module) => openEditModule(item.id, module)}
-              onDeleteModule={(module) => removeModule(item.id, module)}
+              onDeleteModule={deleteModule}
               onToggleModule={(moduleId) => toggleModule(item.id, moduleId)}
               onAddItem={(moduleId) => openItemDialog(item.id, moduleId)}
-              onPublishModule={(moduleId) => publishModule(item.id, moduleId)}
               onViewMaterial={setPreviewMaterial}
               onEditItem={(moduleId, curriculumItem) => openItemDialog(item.id, moduleId, curriculumItem)}
-              onDeleteItem={(moduleId, curriculumItem) => removeItem(item.id, moduleId, curriculumItem)}
+              onDeleteItem={(_, curriculumItem) => deleteItem(curriculumItem)}
             />
           ))}
         </div>
-      )}
+      ))}
 
-      <p className="text-center text-[11px] text-slate-400">Pratinjau statis · perubahan belum dikirim atau disimpan ke server.</p>
+      <p className="text-center text-[11px] text-slate-400">Perubahan modul, materi, dan sesi langsung disimpan ke server.</p>
 
       <Modal
         open={moduleDialog !== null}
@@ -505,6 +348,7 @@ export default function MentorKurikulum() {
           <Field id="curriculum-module-description" label="Deskripsi modul">
             <textarea id="curriculum-module-description" className={`${inputClass()} min-h-24 resize-y`} value={moduleDescription} onChange={(event) => setModuleDescription(event.target.value)} maxLength={500} />
           </Field>
+          {moduleError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{moduleError}</p>}
         </form>
       </Modal>
 
@@ -536,7 +380,7 @@ function CurriculumItemWizard({
   curriculum: CurriculumClass
   existingItem?: CurriculumItem
   onClose: () => void
-  onSave: (items: CurriculumItem[]) => void
+  onSave: (items: CurriculumItem[]) => Promise<string | null>
 }) {
   const initialSelection: ItemSelection = existingItem?.type === 'materi'
     ? 'materi'
@@ -547,11 +391,12 @@ function CurriculumItemWizard({
         : existingItem?.type === 'sesi'
           ? 'sesi'
           : 'materi'
-  const assignments = useSyncExternalStore(subscribeAssignments, getAssignments)
+  const assignmentsState = useApiData(fetchAssignments, [])
+  const assignments = assignmentsState.data ?? []
   const initialAssignment = existingItem?.assignmentId
     ? assignments.find((assignment) => assignment.id === existingItem.assignmentId)
     : assignments.find((assignment) =>
-        assignment.courseId === curriculum.sourceCourseId
+        assignment.courseId === curriculum.id
         && assignment.active
         && assignment.approval === 'Tersedia'
         && (initialSelection === 'tugas' ? assignment.kind !== 'Ujian' : assignment.kind === 'Ujian'),
@@ -561,9 +406,8 @@ function CurriculumItemWizard({
   const parsedDuration = durationLabel ? Number(durationLabel.replace(' menit', '')) : 15
   const initialDuration = existingItem?.durationMinutes
     ?? (Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 15)
-  const sourceCourse = MENTOR_COURSES.find((course) => course.id === curriculum.sourceCourseId) ?? MENTOR_COURSES[0]
-  const canAwardXp = curriculum.audience === 'Siswa' && courseAllowsXp(sourceCourse)
-  const canCreateSession = sessionTypeForCourse(sourceCourse) !== null
+  const canAwardXp = curriculum.allowsXp
+  const canCreateSession = curriculum.sessionType !== null
 
   const [step, setStep] = useState<ItemWizardStep>(1)
   const [selection, setSelection] = useState<ItemSelection>(initialSelection)
@@ -573,13 +417,13 @@ function CurriculumItemWizard({
   const [duration, setDuration] = useState(initialDuration)
   const [fileName, setFileName] = useState(existingItem?.resource && !existingItem.resource.startsWith('http') ? existingItem.resource : '')
   const [attachment, setAttachment] = useState(existingItem?.attachment)
-  const [resourceUrl, setResourceUrl] = useState(existingItem?.resource?.startsWith('http') ? existingItem.resource : '')
+  const [resourceUrl, setResourceUrl] = useState(existingItem?.externalUrl ?? (existingItem?.resource?.startsWith('http') ? existingItem.resource : ''))
   const [assignmentId, setAssignmentId] = useState(String(initialAssignment?.id ?? ''))
   const [sessionDetails, setSessionDetails] = useState<SessionScheduleDetails>({
     date: existingItem?.date?.slice(0, 10) ?? '',
     startTime: existingItem?.startTime ?? '13:00',
     endTime: existingItem?.endTime ?? '14:00',
-    type: existingItem?.sessionType ?? sessionTypeForCourse(sourceCourse) ?? 'Kelas reguler',
+    type: existingItem?.sessionType ?? curriculum.sessionType ?? 'Kelas reguler',
     mode: existingItem?.mode ?? 'Online',
     location: existingItem?.location ?? '',
     meetingLink: existingItem?.meetingLink ?? '',
@@ -594,14 +438,14 @@ function CurriculumItemWizard({
   const includesSession = selection === 'sesi'
   const selectedAssignmentKinds = includesTask ? ['Tugas', 'Kuis'] : includesExam ? ['Ujian'] : []
   const availableAssignments = assignments.filter((assignment) =>
-    assignment.courseId === curriculum.sourceCourseId
+    assignment.courseId === curriculum.id
     && assignment.active
     && assignment.approval === 'Tersedia'
     && selectedAssignmentKinds.includes(assignment.kind),
   )
   const selectedAssignment = availableAssignments.find((assignment) => String(assignment.id) === assignmentId)
 
-  function submitStep(event: FormEvent<HTMLFormElement>) {
+  async function submitStep(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
     if (step === 1) {
@@ -632,7 +476,6 @@ function CurriculumItemWizard({
     const addedItems: CurriculumItem[] = []
     const effectiveMaterialXp = canAwardXp ? Math.max(0, materialXp) : 0
     const effectiveAssessmentXp = canAwardXp ? Math.max(0, assessmentXp) : 0
-    const publicationStatus: ItemPublicationStatus = 'draft'
 
     if (includesMaterial) {
       const resource = fileName || resourceUrl.trim()
@@ -641,12 +484,13 @@ function CurriculumItemWizard({
         title: title.trim(),
         description: description.trim(),
         type: 'materi',
-        status: publicationStatus,
+        status: 'published',
         xpPoints: effectiveMaterialXp,
         detail: `${materialFormat} · ${duration} menit`,
         materialFormat,
         durationMinutes: duration,
-        ...(resource ? { resource } : {}),
+        resource,
+        ...(resourceUrl.trim() ? { externalUrl: resourceUrl.trim() } : {}),
         ...(attachment ? { attachment } : {}),
       })
     }
@@ -658,7 +502,7 @@ function CurriculumItemWizard({
         title: selectedAssignment.title,
         description: description.trim(),
         type,
-        status: publicationStatus,
+        status: 'published',
         xpPoints: effectiveAssessmentXp,
         detail: `${selectedAssignment.kind} · ${selectedAssignment.format}`,
         assignmentId: selectedAssignment.id,
@@ -671,10 +515,10 @@ function CurriculumItemWizard({
         title: title.trim(),
         description: description.trim(),
         type: 'sesi',
-        status: publicationStatus,
+        status: 'published',
         xpPoints: effectiveAssessmentXp,
         detail: `${sessionDetails.startTime}–${sessionDetails.endTime} · ${sessionDetails.mode}`,
-        sessionId: existingItem?.sessionId ?? `session-${now}`,
+        sessionId: existingItem?.sessionId,
         date: sessionDetails.date,
         startTime: sessionDetails.startTime,
         endTime: sessionDetails.endTime,
@@ -685,15 +529,8 @@ function CurriculumItemWizard({
       })
     }
 
-    const itemsToSave = addedItems.map((item, index) => ({
-      ...item,
-      id: existingItem && index === 0
-        ? existingItem.id
-        : existingItem && item.id === existingItem.id
-          ? `item-${now}-${index}`
-          : item.id,
-    }))
-    onSave(itemsToSave)
+    const failure = await onSave(addedItems)
+    if (failure) setError(failure)
   }
 
   return (
@@ -772,7 +609,9 @@ function CurriculumItemWizard({
                     <option value="PDF">PDF</option>
                     <option value="PPT">PPT</option>
                     <option value="PPTX">PPTX</option>
-                    {materialFormat === 'Video' && <option value="Video">Video (materi lama)</option>}
+                    <option value="Dokumen">Dokumen</option>
+                    <option value="Video">Video</option>
+                    <option value="Tautan">Tautan</option>
                   </select>
                 </Field>
                 <Field id="wizard-material-duration" label="Estimasi durasi (menit)">
@@ -953,7 +792,6 @@ function CurriculumClassCard({
   onDeleteModule,
   onToggleModule,
   onAddItem,
-  onPublishModule,
   onViewMaterial,
   onEditItem,
   onDeleteItem,
@@ -969,7 +807,6 @@ function CurriculumClassCard({
   onDeleteModule: (module: CurriculumModule) => void
   onToggleModule: (moduleId: number) => void
   onAddItem: (moduleId: number) => void
-  onPublishModule: (moduleId: number) => void
   onViewMaterial: (item: CurriculumItem) => void
   onEditItem: (moduleId: number, item: CurriculumItem) => void
   onDeleteItem: (moduleId: number, item: CurriculumItem) => void
@@ -977,7 +814,12 @@ function CurriculumClassCard({
   const allItems = curriculumClass.modules.flatMap((module) =>
     module.items.map((item) => ({ ...item, moduleTitle: module.title, moduleId: module.id })),
   )
-  const sessionCount = allItems.filter((item) => item.type === 'sesi').length
+  const sessionItems = curriculumClass.sessions.map((session) => ({
+    ...session,
+    moduleTitle: curriculumClass.modules[0]?.title ?? curriculumClass.title,
+    moduleId: curriculumClass.modules[0]?.id ?? 0,
+  }))
+  const sessionCount = sessionItems.length
   const materials = allItems.filter(isAttachedMaterial)
   const materialCount = materials.length
   const xpTotal = allItems.reduce((sum, item) => sum + item.xpPoints, 0)
@@ -1041,9 +883,7 @@ function CurriculumClassCard({
               <>
                 {curriculumClass.modules.length === 0 ? (
                   <CurriculumEmpty text="Belum ada modul. Gunakan tombol Tambah modul pada kurikulum untuk membuat modul pertama." />
-                ) : curriculumClass.modules.map((module) => {
-                  const draftCount = module.items.filter((item) => item.status === 'draft').length
-                  return (
+                ) : curriculumClass.modules.map((module) => (
                     <article key={module.id} className="overflow-hidden rounded-lg border border-slate-200">
                       <header className="flex flex-wrap items-center gap-2 bg-slate-50 px-3 py-2.5">
                         <button type="button" onClick={() => onToggleModule(module.id)} aria-expanded={module.expanded} className="flex min-w-0 flex-1 items-center gap-2 text-left">
@@ -1055,13 +895,9 @@ function CurriculumClassCard({
                         <button type="button" onClick={() => onAddItem(module.id)} className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1.5 text-[9px] font-semibold text-brand-700 hover:bg-brand-100">
                           <Plus className="h-3 w-3" aria-hidden />Item
                         </button>
-                        {draftCount > 0 ? (
-                          <button type="button" onClick={() => onPublishModule(module.id)} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1.5 text-[9px] font-semibold text-white hover:bg-emerald-700">
-                            <Upload className="h-3 w-3" aria-hidden />Publish {draftCount} item
-                          </button>
-                        ) : module.items.length > 0 ? (
+                        {module.items.length > 0 && (
                           <span className="rounded-md bg-emerald-50 px-2 py-1.5 text-[9px] font-medium text-emerald-700">Sudah dipublish</span>
-                        ) : null}
+                        )}
                         <button type="button" onClick={() => onEditModule(module)} aria-label={`Edit modul ${module.title}`} title="Edit modul" className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-slate-700">
                           <Pencil className="h-3.5 w-3.5" aria-hidden />
                         </button>
@@ -1086,18 +922,17 @@ function CurriculumClassCard({
                         </div>
                       )}
                     </article>
-                  )
-                })}
+                ))}
               </>
             )}
 
             {activeTab === 'sesi' && (
-              <AggregateItems items={allItems.filter((item) => item.type === 'sesi')} emptyText="Belum ada sesi bimbingan. Tambahkan sesi melalui tombol Item pada modul." allowXp={false} />
+              <AggregateItems items={sessionItems} emptyText="Belum ada sesi bimbingan. Tambahkan sesi melalui tombol Item pada modul." allowXp={false} />
             )}
             {activeTab === 'materi' && (
               <AggregateItems
                 items={materials}
-                emptyText="Belum ada lampiran PDF atau PPT pada kurikulum ini."
+                emptyText="Belum ada materi pada kurikulum ini."
                 allowXp={allowXp}
                 onView={onViewMaterial}
               />
@@ -1105,7 +940,7 @@ function CurriculumClassCard({
             {activeTab === 'diskusi' && (
               <CurriculumDiscussionPreview
                 discussions={curriculumClass.discussions}
-                courseId={curriculumClass.sourceCourseId}
+                courseId={curriculumClass.id}
               />
             )}
           </div>
@@ -1116,16 +951,14 @@ function CurriculumClassCard({
 }
 
 function isAttachedMaterial(item: CurriculumItem): boolean {
-  const format = (item.materialFormat ?? item.detail.split(' · ')[0] ?? '').toUpperCase()
   return item.type === 'materi'
-    && (['PDF', 'PPT', 'PPTX'].includes(format) || /\.(pdf|pptx?)$/i.test(item.resource ?? ''))
 }
 
 function CurriculumDiscussionPreview({
   discussions,
   courseId,
 }: {
-  discussions: CurriculumClass['discussions']
+  discussions: CurriculumDiscussion[]
   courseId: number
 }) {
   const previewDiscussions = discussions.slice(0, 3)
@@ -1237,18 +1070,8 @@ function AggregateItems({
 }
 
 function MaterialPreviewDialog({ item, onClose }: { item: CurriculumItem; onClose: () => void }) {
-  const [fileUrl, setFileUrl] = useState('')
-  const externalUrl = item.resource?.startsWith('http') ? item.resource : ''
-  const isPdf = (item.materialFormat ?? item.resource ?? '').toLowerCase().includes('pdf')
-
-  useEffect(() => {
-    if (!item.attachment) return
-    const url = URL.createObjectURL(item.attachment)
-    setFileUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [item.attachment])
-
-  const previewUrl = fileUrl || externalUrl
+  const previewUrl = item.fileUrl || item.externalUrl || ''
+  const isPdf = (item.materialFormat ?? '').toLowerCase().includes('pdf')
 
   return (
     <Modal
@@ -1260,7 +1083,7 @@ function MaterialPreviewDialog({ item, onClose }: { item: CurriculumItem; onClos
       footer={<Button variant="secondary" onClick={onClose}>Tutup</Button>}
     >
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">{item.materialFormat ?? item.detail} · {item.resource}</p>
+        <p className="text-xs text-slate-500">{item.materialFormat ?? item.detail}{item.resource ? ` · ${item.resource}` : ''}</p>
         {previewUrl && isPdf ? (
           <iframe title={`Pratinjau ${item.title}`} src={previewUrl} className="h-[65vh] w-full rounded-lg border border-slate-200" />
         ) : previewUrl ? (
@@ -1269,9 +1092,8 @@ function MaterialPreviewDialog({ item, onClose }: { item: CurriculumItem; onClos
             <p className="mt-2 text-xs text-slate-600">Buka atau unduh file slide untuk melihat isinya.</p>
             <a
               href={previewUrl}
-              target={externalUrl ? '_blank' : undefined}
-              rel={externalUrl ? 'noreferrer' : undefined}
-              download={!externalUrl ? item.resource : undefined}
+              target="_blank"
+              rel="noreferrer"
               className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700"
             >
               <Eye className="h-4 w-4" aria-hidden />Buka file
@@ -1279,7 +1101,7 @@ function MaterialPreviewDialog({ item, onClose }: { item: CurriculumItem; onClos
           </div>
         ) : (
           <p role="status" className="rounded-lg bg-amber-50 p-4 text-xs leading-5 text-amber-800">
-            File contoh belum tersedia untuk dibuka. Lampirkan file PDF atau PPT saat mengedit materi untuk mengaktifkan pratinjau.
+            Materi ini belum memiliki berkas atau tautan untuk dibuka.
           </p>
         )}
       </div>

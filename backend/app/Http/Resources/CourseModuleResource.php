@@ -14,6 +14,7 @@ class CourseModuleResource extends JsonResource
             'id' => $this->id,
             'course_id' => $this->course_id,
             'title' => $this->title,
+            'description' => $this->description,
             'position' => $this->position,
             'materials' => MaterialResource::collection($this->whenLoaded('materials')),
             'materials_count' => $this->whenCounted('materials'),

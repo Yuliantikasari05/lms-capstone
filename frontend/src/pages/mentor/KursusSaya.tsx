@@ -3,11 +3,18 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/ui/Button'
-import { EmptyState } from '../../components/ui/States'
-import type { CourseType } from '../../features/courses/types'
-import { courseAudience, courseDurationMinutes, MENTOR_COURSES, type MentorCoursePreview } from './courseData'
+import { EmptyState, ErrorState, Spinner } from '../../components/ui/States'
+import type { Course, CourseType } from '../../features/courses/types'
+import { api } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import type { Paginated } from '../../types'
+import { toCourseCard, type MentorCourseCard } from './courseApi'
+import { courseAudience } from './courseData'
 
 type AudienceFilter = 'all' | 'siswa' | 'karyawan'
+
+/** Satu halaman cukup: Mentor hanya melihat kursus yang diampu sendiri. */
+const PER_PAGE = 100
 
 const FILTERS: { value: AudienceFilter; label: string }[] = [
   { value: 'all', label: 'Semua kursus' },
@@ -57,11 +64,11 @@ function CourseCard({
   course,
   mentorName,
 }: {
-  course: MentorCoursePreview
+  course: MentorCourseCard
   mentorName: string
 }) {
   const style = TYPE_STYLES[course.type]
-  const durationHours = Math.ceil(courseDurationMinutes(course) / 60)
+  const durationHours = Math.ceil(course.durationMinutes / 60)
 
   return (
     <article className="overflow-hidden rounded-xl border border-slate-200 bg-white transition-shadow hover:shadow-md">
@@ -84,15 +91,15 @@ function CourseCard({
           <div className="mt-3 flex items-center justify-between border-y border-slate-100 py-2.5 text-[11px] text-slate-400">
             <span className="flex items-center gap-1.5">
               <BookOpen className="h-4 w-4" aria-hidden />
-              {course.modules.length} modul
+              {course.modules} modul
             </span>
             <span className="flex items-center gap-1.5">
               <Clock3 className="h-4 w-4" aria-hidden />
               {durationHours} jam
             </span>
-            <span className="flex items-center gap-1 text-amber-600">
+            <span className="flex items-center gap-1 text-amber-600" title="Rating belum tersedia">
               <Star className="h-4 w-4 fill-current" aria-hidden />
-              {course.rating.toFixed(1)}
+              —
             </span>
           </div>
 
@@ -117,10 +124,16 @@ export default function MentorKursusSaya() {
   const [query, setQuery] = useState('')
   const [audience, setAudience] = useState<AudienceFilter>('all')
 
+  const list = useApiData<Paginated<Course>>(
+    async () => (await api.get<Paginated<Course>>('/courses', { params: { per_page: PER_PAGE } })).data,
+    [],
+  )
+
   const courses = useMemo(() => {
+    const all = (list.data?.data ?? []).map(toCourseCard)
     const normalizedQuery = query.trim().toLocaleLowerCase('id-ID')
 
-    return MENTOR_COURSES.filter((course) => {
+    return all.filter((course) => {
       const matchesAudience = audience === 'all' || courseAudience(course.type) === audience
       const matchesQuery =
         !normalizedQuery ||
@@ -129,9 +142,14 @@ export default function MentorKursusSaya() {
 
       return matchesAudience && matchesQuery
     })
-  }, [audience, query])
+  }, [audience, query, list.data])
 
+  const total = list.data?.meta.total ?? 0
   const mentorName = user?.name ?? 'Mentor'
+  const resetFilters = () => {
+    setQuery('')
+    setAudience('all')
+  }
 
   return (
     <>
@@ -177,24 +195,34 @@ export default function MentorKursusSaya() {
           </button>
         ))}
         {(query || audience !== 'all') && (
-          <Button variant="ghost" className="px-2 py-1.5 text-xs" onClick={() => { setQuery(''); setAudience('all') }}>
+          <Button variant="ghost" className="px-2 py-1.5 text-xs" onClick={resetFilters}>
             Reset
           </Button>
         )}
       </section>
 
-      <p className="mb-3 text-xs text-slate-500" aria-live="polite">
-        Menampilkan {courses.length} dari {MENTOR_COURSES.length} kursus <span className="text-amber-700">· data contoh</span>
-      </p>
+      {list.loading && !list.data && <Spinner label="Memuat kursus…" />}
+      {list.error && <ErrorState error={list.error} onRetry={list.reload} />}
 
-      {courses.length === 0 ? (
-        <EmptyState title="Kursus tidak ditemukan" description="Coba ubah kata pencarian atau filter yang dipilih." />
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {courses.map((course) => (
-            <CourseCard key={course.id} course={course} mentorName={mentorName} />
-          ))}
-        </div>
+      {list.data && (
+        <>
+          <p className="mb-3 text-xs text-slate-500" aria-live="polite">
+            Menampilkan {courses.length} dari {total} kursus
+          </p>
+
+          {courses.length === 0 ? (
+            <EmptyState
+              title={total === 0 ? 'Belum ada kursus' : 'Kursus tidak ditemukan'}
+              description={total === 0 ? 'Kursus yang ditugaskan Admin kepada Anda akan tampil di sini.' : 'Coba ubah kata pencarian atau filter yang dipilih.'}
+            />
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {courses.map((course) => (
+                <CourseCard key={course.id} course={course} mentorName={mentorName} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </>
   )

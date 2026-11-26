@@ -29,6 +29,8 @@ class CourseResource extends JsonResource
             'modules_count' => $this->whenCounted('modules'),
             'sessions_count' => $this->whenCounted('sessions'),
             'participants_count' => $this->whenHas('participants_count'),
+            // Akumulasi duration_minutes seluruh materi; 0 bila kursus belum punya materi.
+            'duration_minutes' => (int) ($this->materials_duration_minutes ?? 0),
             // Apa yang boleh dilakukan pengguna ini pada kursus ini (frontend menonaktifkan tombol sesuai ini;
             // backend tetap yang menentukan).
             'abilities' => $user ? [

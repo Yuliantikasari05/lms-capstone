@@ -23,8 +23,11 @@ import {
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { EmptyState } from '../../components/ui/States'
-import type { CourseDiscussionPreview, CourseMaterialPreview, CourseModulePreview, CourseReviewPreview, SupportingMaterialPreview } from './courseData'
+import { EmptyState, ErrorState, Spinner } from '../../components/ui/States'
+import type { Course, CourseModule } from '../../features/courses/types'
+import { api } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import type { CourseDiscussionPreview, CourseMaterialPreview, CourseModulePreview, CourseReviewPreview, MentorCoursePreview, SupportingMaterialPreview } from './courseData'
 import {
   courseAudience,
   courseDurationMinutes,
@@ -32,9 +35,9 @@ import {
   courseAllowsXp,
   courseXpBreakdown,
   courseTypeLabel,
-  MENTOR_COURSES,
   moduleXpTotal,
 } from './courseData'
+import { toCoursePreview } from './courseApi'
 
 type DetailTab = 'curriculum' | 'discussions' | 'reviews' | 'modules'
 
@@ -89,6 +92,7 @@ function CurriculumTab({
   }
 
   const MediaIcon = materialIcon(selected.material.type)
+  const mediaUrl = selected.material.fileUrl ?? selected.material.externalUrl ?? null
 
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.9fr)]">
@@ -100,11 +104,19 @@ function CurriculumTab({
                 <MediaIcon className="h-8 w-8" aria-hidden />
               </span>
               <p className="mt-4 text-sm font-semibold">Pratinjau {selected.material.type === 'video' ? 'video' : 'materi'}</p>
-              <p className="mt-1 text-xs text-white/70">Media belum terhubung pada prototipe statis ini.</p>
-              {selected.material.type === 'video' && (
-                <span className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-800">
-                  <Play className="h-4 w-4 fill-current" aria-hidden /> Preview
-                </span>
+              <p className="mt-1 text-xs text-white/70">
+                {mediaUrl ? 'Materi dapat dibuka pada tab baru.' : 'Materi ini belum memiliki berkas atau tautan.'}
+              </p>
+              {mediaUrl && (
+                <a
+                  href={mediaUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-800"
+                >
+                  <Play className="h-4 w-4 fill-current" aria-hidden />
+                  {selected.material.type === 'video' ? 'Tonton materi' : 'Buka materi'}
+                </a>
               )}
             </div>
           </div>
@@ -546,7 +558,7 @@ function ModulesTab({
                 <h2 className="mt-1 font-semibold text-slate-900">{module.title}</h2>
               </div>
             </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{module.description}</p>
+            {module.description && <p className="mt-3 text-sm leading-6 text-slate-600">{module.description}</p>}
             <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1"><BookOpen className="h-4 w-4" aria-hidden />{module.materials.length} submateri</span>
               {totalXp > 0 && <span className="flex items-center gap-1"><Zap className="h-4 w-4 text-amber-500" aria-hidden />Potensi {totalXp} XP</span>}
@@ -634,23 +646,39 @@ export default function MentorCourseDetail() {
   const { courseId } = useParams<{ courseId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const [downloadNoticeId, setDownloadNoticeId] = useState<string | null>(null)
-  const course = MENTOR_COURSES.find((item) => item.id === Number(courseId))
+
+  // Kursus dan isi kurikulumnya diambil langsung dari API yang sama dengan halaman Admin.
+  const detail = useApiData<MentorCoursePreview>(async () => {
+    const [courseRes, modulesRes] = await Promise.all([
+      api.get<{ data: Course }>(`/courses/${courseId}`),
+      api.get<{ data: CourseModule[] }>(`/courses/${courseId}/modules`),
+    ])
+    return toCoursePreview(courseRes.data.data, modulesRes.data.data)
+  }, [courseId])
+
+  const course = detail.data
   const requestedTab = searchParams.get('tab') as DetailTab | null
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab! : 'curriculum'
   const firstMaterialId = course ? allMaterials(course.modules)[0]?.material.id : undefined
   const selectedMaterialId = searchParams.get('material') ?? firstMaterialId ?? ''
   const durationMinutes = useMemo(() => course ? courseDurationMinutes(course) : 0, [course])
 
-  if (!course) {
+  if (detail.loading && !course) return <Spinner label="Memuat kursus…" />
+  if (detail.error) {
     return (
       <div className="space-y-4">
         <Link to="/mentor/courses" className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-brand-700">
           <ArrowLeft className="h-4 w-4" aria-hidden /> Kembali ke Kursus Saya
         </Link>
-        <EmptyState title="Kursus tidak ditemukan" description="Kursus mungkin sudah tidak tersedia pada data contoh." />
+        {detail.error.kind === 'not_found' ? (
+          <EmptyState title="Kursus tidak ditemukan" description="Kursus mungkin sudah dihapus atau bukan kursus yang Anda ampu." />
+        ) : (
+          <ErrorState error={detail.error} onRetry={detail.reload} />
+        )}
       </div>
     )
   }
+  if (!course) return null
 
   const setTab = (nextTab: DetailTab) => {
     const next = new URLSearchParams(searchParams)
@@ -681,7 +709,7 @@ export default function MentorCourseDetail() {
         <p className="mt-2 max-w-3xl text-sm text-white/80 sm:text-base">{course.description}</p>
         <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3 text-sm">
           <span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-xs font-bold">{course.modules.length}</span>{course.modules.length} modul</span>
-          <span className="flex items-center gap-2"><Star className="h-4 w-4 fill-current" aria-hidden />{course.rating.toFixed(1)}/5.0</span>
+          <span className="flex items-center gap-2"><Star className="h-4 w-4 fill-current" aria-hidden />{course.rating === null ? 'Belum ada ulasan' : `${course.rating.toFixed(1)}/5.0`}</span>
           <span className="flex items-center gap-2"><Clock3 className="h-4 w-4" aria-hidden />{Math.ceil(durationMinutes / 60)} jam</span>
           <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" aria-hidden />{course.sessions} sesi</span>
           <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" aria-hidden />{course.students} {courseAudience(course.type)}</span>
@@ -704,8 +732,8 @@ export default function MentorCourseDetail() {
             </button>
           ))}
         </nav>
-        <span className="hidden shrink-0 rounded-full bg-amber-50 px-3 py-1 text-[10px] font-medium text-amber-700 sm:inline-flex">
-          Pratinjau statis
+        <span className="hidden shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-medium text-emerald-700 sm:inline-flex">
+          Data langsung dari server
         </span>
       </div>
 

@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\Enrollment;
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,13 +40,6 @@ class CourseApiTest extends TestCase
     private function mentor(array $attrs = []): User
     {
         return $this->userWithRole(Role::MENTOR, $attrs);
-    }
-
-    private function grantMentor(): void
-    {
-        Role::where('slug', Role::MENTOR)->firstOrFail()->permissions()->syncWithoutDetaching(
-            Permission::whereIn('slug', ['courses.view', 'courses.create', 'courses.update', 'content.manage'])->pluck('id')
-        );
     }
 
     private function lastLog(string $action): AuditLog
@@ -382,7 +374,7 @@ class CourseApiTest extends TestCase
     // ------------------------------------------------------------------ otorisasi role lain
 
     #[DataProvider('nonAdminRoles')]
-    public function test_non_admin_cannot_use_course_endpoints(string $role): void
+    public function test_roles_without_course_permissions_cannot_use_course_endpoints(string $role): void
     {
         $actor = $this->userWithRole($role);
         $course = Course::factory()->active()->mentoredBy($this->mentor())->create();
@@ -399,7 +391,7 @@ class CourseApiTest extends TestCase
 
     public static function nonAdminRoles(): array
     {
-        return [['mentor'], ['siswa'], ['karyawan'], ['lembaga']];
+        return [['siswa'], ['karyawan'], ['lembaga']];
     }
 
     public function test_guests_are_rejected(): void
@@ -416,11 +408,10 @@ class CourseApiTest extends TestCase
         $this->as($admin2)->getJson('/api/v1/courses')->assertStatus(403)->assertJsonPath('code', 'password_change_required');
     }
 
-    // ------------------------------------------------------------------ Mentor di masa depan (izin diberikan)
+    // ------------------------------------------------------------------ Mentor: pengelolaan kursus yang diampu
 
-    public function test_a_future_mentor_with_permissions_sees_and_changes_only_own_courses(): void
+    public function test_a_mentor_sees_and_changes_only_own_courses(): void
     {
-        $this->grantMentor();
         $mentor = $this->mentor();
         $own = Course::factory()->mentoredBy($mentor)->create(['title' => 'Milik Saya']);
         $foreign = Course::factory()->mentoredBy($this->mentor())->create(['title' => 'Milik Orang']);
@@ -439,9 +430,8 @@ class CourseApiTest extends TestCase
         $this->assertSame('Milik Orang', $foreign->fresh()->title);
     }
 
-    public function test_a_future_mentor_creating_a_course_becomes_its_mentor(): void
+    public function test_a_mentor_creating_a_course_becomes_its_mentor(): void
     {
-        $this->grantMentor();
         $mentor = $this->mentor();
 
         $this->as($mentor)->postJson('/api/v1/courses', ['type' => 'academic', 'title' => 'Kursus Mentor', 'status' => 'active'])

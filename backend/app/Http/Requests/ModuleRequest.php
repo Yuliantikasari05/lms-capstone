@@ -27,6 +27,7 @@ class ModuleRequest extends FormRequest
     {
         return [
             'title' => ['required', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:500'],
         ];
     }
 
@@ -35,6 +36,7 @@ class ModuleRequest extends FormRequest
         return [
             'title.required' => 'Judul modul wajib diisi.',
             'title.max' => 'Judul modul maksimal 150 karakter.',
+            'description.max' => 'Deskripsi modul maksimal 500 karakter.',
         ];
     }
 }

@@ -22,11 +22,18 @@ use Illuminate\Database\Seeder;
  * - Hanya berjalan di lingkungan local/testing.
  * - Memakai akun @demo.test dari DemoUserSeeder (Mentor, Siswa, Karyawan, Lembaga).
  * - Aman dijalankan berulang: kursus dicocokkan lewat judul, modul/materi/sesi/peserta tidak digandakan.
- * - Materi hanya berupa tautan (tanpa file) agar tidak memenuhi penyimpanan; jadwal sesi dihitung dari hari ini.
+ * - Materi hanya berupa tautan (tanpa file) agar tidak memenuhi penyimpanan: bertipe video bila punya durasi,
+ *   tautan bila tidak. Jadwal sesi dihitung dari hari ini.
  * - Hapus semua data demo kursus:  Course::withTrashed()->whereIn('title', DemoCourseSeeder::titles())->forceDelete();
  */
 class DemoCourseSeeder extends Seeder
 {
+    /**
+     * Tautan Google Meet contoh untuk sesi demo. Hanya untuk data contoh lokal; saat Mentor membuat
+     * sesi sungguhan, tautan asli wajib diisi (divalidasi backend).
+     */
+    public const DEMO_MEETING_URL = 'https://meet.google.com/hbk-givp-vaz';
+
     /** @return array<int,string> */
     public static function titles(): array
     {
@@ -150,7 +157,8 @@ class DemoCourseSeeder extends Seeder
                 $material->course_module_id = $module->id;
                 $material->fill([
                     'title' => $materialTitle,
-                    'type' => Material::TYPE_LINK,
+                    // Video boleh punya durasi dan tautan; tautan biasa tidak memakai durasi (sesuai aturan API).
+                    'type' => $duration !== null ? Material::TYPE_VIDEO : Material::TYPE_LINK,
                     'external_url' => 'https://contoh.demo.test/materi/'.str($materialTitle)->slug(),
                     'duration_minutes' => $duration,
                     'xp_points' => $course->allowsXp() ? $xp : 0,
@@ -163,15 +171,20 @@ class DemoCourseSeeder extends Seeder
     /** @param array<int, array{0:string,1:int,2:int,3:int}> $sessions */
     private function seedSessions(Course $course, array $sessions): void
     {
-        foreach ($sessions as [$title, $daysFromNow, $hour, $hours]) {
+        foreach (array_values($sessions) as $index => [$title, $daysFromNow, $hour, $hours]) {
             $start = now()->addDays($daysFromNow)->setTime($hour, 0);
+            // Sesi ganjil dibuat Offline agar halaman Jadwal menampilkan kedua mode.
+            $offline = $index % 2 === 1;
             $session = ClassSession::query()->where('course_id', $course->id)->where('title', $title)->first() ?? new ClassSession;
             $session->course_id = $course->id;
             $session->fill([
                 'title' => $title,
                 'starts_at' => $start,
                 'ends_at' => $start->copy()->addHours($hours),
-                'meeting_url' => 'https://meet.google.com/demo-'.str($title)->slug(),
+                'mode' => $offline ? ClassSession::MODE_OFFLINE : ClassSession::MODE_ONLINE,
+                'location' => $offline ? 'Ruang bimbingan 1' : null,
+                'meeting_url' => $offline ? null : self::DEMO_MEETING_URL,
+                'status' => $course->status === Course::STATUS_DRAFT ? ClassSession::STATUS_DRAFT : ClassSession::STATUS_SCHEDULED,
             ])->save();
         }
     }
@@ -190,7 +203,7 @@ class DemoCourseSeeder extends Seeder
             $enrollment->user_id = $user->id;
             $enrollment->enrolled_by = $admin?->id;
             $enrollment->fill(['status' => Enrollment::STATUS_ACTIVE, 'source' => Enrollment::SOURCE_ADMIN]);
-            $enrollment->enrolled_at ??= now();
+            $enrollment->enrolled_at ??= $user->created_at ?? now();
             $enrollment->cancelled_at = null;
             $enrollment->save();
         }
