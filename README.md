@@ -110,12 +110,18 @@ php artisan migrate
 php artisan db:seed --class=DemoUserSeeder
 php artisan db:seed --class=DemoCourseSeeder
 php artisan db:seed --class=DemoAssignmentSeeder
+php artisan db:seed --class=DemoLearningSeeder   # data belajar Siswa (opsional)
+php artisan db:seed --class=DemoGamificationSeeder # level & XP contoh (opsional)
+php artisan db:seed --class=DemoNotificationSeeder # notifikasi contoh Siswa, Mentor, dan Admin (opsional)
 ```
 
 - `DemoUserSeeder` membuat akun `@demo.test` (Mentor, Siswa, Karyawan, Lembaga). Kata sandinya dari `DEMO_USER_PASSWORD` di `.env`.
 - `DemoCourseSeeder` membuat 7 kursus beserta modul, materi, sesi, dan peserta untuk Mentor demo (mis. `rina.kusumawati@demo.test`, `bagas.prasetyo@demo.test`). Aman dijalankan berulang: data dicocokkan lewat judul.
 - Sesi demo bergantian **Online** dan **Offline**. Sesi Online memakai tautan dummy `https://meet.google.com/hbk-givp-vaz` (hanya untuk demo); sesi Offline tidak punya tautan dan memakai lokasi ruangan. Saat Mentor membuat sesi sungguhan, tautan asli wajib diisi untuk sesi Online.
 - `DemoAssignmentSeeder` membuat tugas, kuis, dan satu ujian (berstatus **Menunggu persetujuan** Admin) beserta soal dan pengumpulan contoh, sehingga halaman **Tugas** dan tab **Tugas siswa/karyawan** langsung berisi data.
+- `DemoLearningSeeder` melengkapi akun `adi.saputra@demo.test` (enrollment aktif, materi selesai, log belajar 6 bulan, hari aktif, kehadiran sesi lampau) sehingga Dashboard, Materi, Tugas, Jadwal, Papan Peringkat, dan Laporan siswa berisi data nyata. Rincian endpoint: `docs/api-belajar-siswa.md`.
+- `DemoGamificationSeeder` membuat level contoh hanya bila tabel `levels` masih kosong, lalu memberi XP contoh ke Siswa demo agar papan peringkat tidak kosong.
+- `DemoNotificationSeeder` mengisi lonceng dan halaman **Notifikasi** tiap peran dengan isi sesuai pekerjaannya: Siswa (`adi.saputra@demo.test`), Mentor (`rina.kusumawati@demo.test`), dan setiap akun Admin. Notifikasi juga dibuat otomatis dari aktivitas nyata: pengumpulan tugas (Mentor), keputusan review ujian dan peserta baru (Admin), nilai tugas dan sesi baru (Siswa). Penerimanya ditentukan izin role dan kepemilikan kursus.
 - Keduanya hanya berjalan di lingkungan `local`/`testing` dan **tidak** dipanggil oleh `db:seed` biasa.
 - Materi demo memakai tautan (tanpa file) dan bertipe `video` bila punya durasi, `link` bila tidak, sesuai aturan API.
 - Hapus data demo kursus lewat `php artisan tinker`: `Course::withTrashed()->whereIn('title', DemoCourseSeeder::titles())->forceDelete();`

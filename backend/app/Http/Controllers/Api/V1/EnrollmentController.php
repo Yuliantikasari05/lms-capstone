@@ -9,7 +9,9 @@ use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\User;
+use App\Notifications\LearningNotification;
 use App\Support\Like;
+use App\Support\Notifications\NotificationRecipients;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\JsonResponse;
@@ -123,6 +125,8 @@ class EnrollmentController extends Controller
             return new EloquentCollection($result);
         });
 
+        $this->notifyNewEnrollments($course, $created, $actor);
+
         return response()->json([
             'data' => EnrollmentResource::collection($created->load(['user', 'enrolledBy']))->resolve($request),
             'message' => $created->count() === 1 ? 'Peserta berhasil didaftarkan.' : "{$created->count()} peserta berhasil didaftarkan.",
@@ -152,5 +156,49 @@ class EnrollmentController extends Controller
         });
 
         return response()->json(['message' => 'Pendaftaran peserta dibatalkan.']);
+    }
+
+    /**
+     * Kabari Mentor pengampu (bila berhak melihat kursus) dan tiap peserta yang baru didaftarkan.
+     * Isi pesan mengikuti pekerjaan masing-masing: Mentor menyambut peserta, peserta mulai belajar.
+     */
+    private function notifyNewEnrollments(Course $course, EloquentCollection $enrollments, User $actor): void
+    {
+        $enrollments->load('user');
+        $actorRole = $actor->roles->first()?->name ?? 'Admin';
+
+        $mentor = NotificationRecipients::courseMentor($course, 'courses.view', $actor);
+        $names = $enrollments->pluck('user.name')->filter()->implode(', ');
+
+        if ($mentor !== null && $names !== '') {
+            $mentor->notify(new LearningNotification(
+                LearningNotification::CATEGORY_ROSTER,
+                'Peserta baru di '.$course->title,
+                $names.' baru bergabung ke kursus yang Anda ampu. Periksa daftar peserta untuk menyapa mereka.',
+                $actor->name,
+                $actorRole,
+                'Lihat peserta',
+                '/mentor/courses/'.$course->id,
+            ));
+        }
+
+        $href = $course->allowsXp() ? '/siswa/materials' : '/karyawan/notifications';
+
+        foreach ($enrollments as $enrollment) {
+            $user = $enrollment->user;
+            if ($user === null || $user->is($actor)) {
+                continue;
+            }
+
+            $user->notify(new LearningNotification(
+                LearningNotification::CATEGORY_SYSTEM,
+                'Kamu terdaftar di '.$course->title,
+                'Akunmu sudah didaftarkan oleh '.$actor->name.'. Buka materi untuk mulai belajar.',
+                $actor->name,
+                $actorRole,
+                'Buka materi',
+                $href,
+            ));
+        }
     }
 }

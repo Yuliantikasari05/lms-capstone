@@ -7,6 +7,8 @@ use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\AuditLog;
+use App\Models\LearningDay;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -47,6 +49,12 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
+
+        // Hari aktif (kalender aplikasi) hanya untuk Siswa: dasar Daily Streak dan "Total Hari Aktif".
+        if ($user->hasRole(Role::SISWA)) {
+            LearningDay::query()->firstOrCreate(['user_id' => $user->id, 'day' => now()->toDateString()]);
+        }
+
         $user->load('roles.permissions');
 
         return (new UserResource($user))->additional(['message' => 'Login berhasil.']);

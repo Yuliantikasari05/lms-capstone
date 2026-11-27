@@ -9,10 +9,14 @@ use App\Models\Assignment;
 use App\Models\AssignmentQuestion;
 use App\Models\AuditLog;
 use App\Models\Course;
+use App\Models\User;
+use App\Notifications\LearningNotification;
+use App\Support\Notifications\NotificationRecipients;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 
 /** Tugas, kuis, dan ujian: daftar, buat, ubah, hapus, aktif/nonaktif, dan review Admin. */
 class AssignmentController extends Controller
@@ -79,6 +83,8 @@ class AssignmentController extends Controller
 
             return $assignment;
         });
+
+        $this->notifyReviewers($assignment, $course, $request->user());
 
         return (new AssignmentResource($assignment->load(['course', 'questions'])->loadCount(['questions', 'submissions'])))
             ->additional(['message' => 'Tugas berhasil dibuat.'])
@@ -184,7 +190,56 @@ class AssignmentController extends Controller
 
         AuditLog::record('assignment.reviewed', $assignment, ['status' => $assignment->status], $request);
 
+        $this->notifyCreator($assignment, $request);
+
         return new AssignmentResource($assignment->load(['course', 'questions'])->loadCount(['questions', 'submissions']));
+    }
+
+    /** Ujian baru menunggu review: beri tahu pemegang izin review (Admin), bukan semua pengguna. */
+    private function notifyReviewers(Assignment $assignment, Course $course, User $actor): void
+    {
+        if ($assignment->status !== Assignment::STATUS_PENDING) {
+            return;
+        }
+
+        $reviewers = NotificationRecipients::withPermission('assignments.review', $actor);
+        if ($reviewers->isEmpty()) {
+            return;
+        }
+
+        Notification::send($reviewers, new LearningNotification(
+            LearningNotification::CATEGORY_ASSESSMENT,
+            'Ujian menunggu review: '.$assignment->title,
+            $actor->name.' mengajukan ujian untuk '.$course->title.'. Tinjau soal sebelum dapat dipakai peserta.',
+            $actor->name,
+            $actor->roles->first()?->name ?? 'Mentor',
+            'Review ujian',
+            '/admin/courses',
+        ));
+    }
+
+    /** Keputusan review Admin dikirim ke pembuat ujian (Mentor) agar tidak menebak hasilnya. */
+    private function notifyCreator(Assignment $assignment, Request $request): void
+    {
+        $creator = $assignment->creator;
+        if ($creator === null || $creator->is($request->user()) || ! $creator->isActive()) {
+            return;
+        }
+
+        $approved = $assignment->status === Assignment::STATUS_APPROVED;
+        $note = filled($assignment->review_note) ? ' Catatan Admin: '.$assignment->review_note : '';
+
+        $creator->notify(new LearningNotification(
+            LearningNotification::CATEGORY_ASSESSMENT,
+            ($approved ? 'Ujian disetujui: ' : 'Ujian perlu diperbaiki: ').$assignment->title,
+            ($approved
+                ? 'Admin menyetujui ujian ini sehingga sudah dapat dipakai peserta.'
+                : 'Admin menolak pengajuan ujian ini.').$note,
+            $request->user()->name,
+            $request->user()->roles->first()?->name ?? 'Admin',
+            $approved ? 'Lihat tugas' : 'Lihat catatan',
+            '/mentor/assignments',
+        ));
     }
 
     /** @param array<int, array<string, mixed>> $questions */

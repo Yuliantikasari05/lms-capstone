@@ -8,10 +8,12 @@ use App\Http\Resources\ClassSessionResource;
 use App\Models\AuditLog;
 use App\Models\ClassSession;
 use App\Models\Course;
+use App\Notifications\LearningNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 
 class ClassSessionController extends Controller
 {
@@ -50,6 +52,8 @@ class ClassSessionController extends Controller
 
             return $session;
         });
+
+        $this->notifyEnrolledStudents($course, $session, $request);
 
         return (new ClassSessionResource($session->load('course.mentor')))
             ->additional(['message' => 'Sesi berhasil dibuat.'])
@@ -112,6 +116,34 @@ class ClassSessionController extends Controller
 
         return response()->json(['data' => ['meeting_url' => $session->meeting_url]])
             ->header('Cache-Control', 'private, no-store');
+    }
+
+    /** Beri tahu peserta aktif bahwa sesi baru dijadwalkan (notifikasi dalam aplikasi). */
+    private function notifyEnrolledStudents(Course $course, ClassSession $session, Request $request): void
+    {
+        $students = $course->activeEnrollments()->with('user')->get()
+            ->pluck('user')
+            ->filter()
+            ->values();
+
+        if ($students->isEmpty()) {
+            return;
+        }
+
+        $href = in_array($course->type, [Course::TYPE_ACADEMIC, Course::TYPE_INSTITUTION], true)
+            ? '/siswa/schedule'
+            : '/karyawan/notifications';
+
+        Notification::send($students, new LearningNotification(
+            LearningNotification::CATEGORY_SCHEDULE,
+            'Sesi bimbingan baru: '.$session->title,
+            'Sesi untuk '.$course->title.' dijadwalkan pada '
+                .$session->starts_at?->timezone(config('app.timezone'))->translatedFormat('d M Y, H:i').'.',
+            $request->user()->name,
+            $request->user()->roles->first()?->name ?? 'Mentor',
+            'Lihat jadwal',
+            $href,
+        ));
     }
 
     /** Sertakan jumlah peserta aktif dan Mentor agar resource tidak menembak query per baris. */

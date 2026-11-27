@@ -14,30 +14,15 @@ import {
   Trophy,
   type LucideIcon,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { StudyChart, type StudyMonth } from '../../components/StudyChart'
+import { ErrorState, Spinner } from '../../components/ui/States'
 import { downloadCsv } from '../../lib/downloadCsv'
 import { formatDate } from '../../lib/format'
-import { SCHEDULE } from './jadwalData'
-import { COURSES, isEnrolled } from './materiData'
+import { useApiData } from '../../lib/useApiData'
 import { TASK_STATUS, subjectColor, timeFormat } from './shared'
-import { TASKS } from './tugasData'
-
-/*
- * DATA CONTOH (statis) yang belum ada di halaman lain. Angka lain di halaman ini
- * dihitung dari data Materi (materiData), Tugas (tugasData), dan Jadwal (jadwalData).
- */
-/** Jam belajar 11 bulan sebelum bulan ini; bulan ini dihitung dari studyMinutes kursus. */
-const PAST_MONTH_HOURS = [12, 15, 18, 16, 20, 22, 20, 25, 30, 35, 40]
-/** Hari aktif 12 bulan terakhir, bulan ini paling akhir. */
-const ACTIVE_DAYS = [8, 9, 11, 10, 12, 13, 12, 14, 16, 18, 20, 18]
-const ATTENDANCE_RATE = 92
-const ACHIEVEMENTS: { Icon: LucideIcon; className: string; title: string; date: string }[] = [
-  { Icon: Medal, className: 'bg-red-100 text-red-500', title: 'Nilai Terbaik Matematika (90)', date: '2026-10-20' },
-  { Icon: Trophy, className: 'bg-blue-50 text-blue-600', title: 'Menyelesaikan Pendidikan Pancasila', date: '2026-10-18' },
-  { Icon: Award, className: 'bg-green-200 text-green-600', title: 'Tugas Pertama Dikumpulkan', date: '2026-10-15' },
-]
+import { fetchStudentReport, type StudentReport, type StudentReportAchievement } from './studentApi'
 
 type Tab = 'ringkasan' | 'akademik' | 'tugas' | 'bimbingan'
 
@@ -53,90 +38,85 @@ interface MonthStat extends StudyMonth {
 }
 
 const numberFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 })
-const monthShort = new Intl.DateTimeFormat('id-ID', { month: 'short' })
 const monthYear = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' })
+
+const ACHIEVEMENT_STYLE: Record<StudentReportAchievement['type'], { Icon: LucideIcon; className: string }> = {
+  best_score: { Icon: Medal, className: 'bg-red-100 text-red-500' },
+  course_completed: { Icon: Trophy, className: 'bg-blue-50 text-blue-600' },
+  first_submission: { Icon: Award, className: 'bg-green-200 text-green-600' },
+}
 
 function formatMinutes(minutes: number): string {
   const rest = minutes % 60
   return `${Math.floor(minutes / 60)} Jam${rest ? ` ${rest} Menit` : ''}`
 }
 
-const average = (values: number[]) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null)
-
-/** Semua angka laporan, dihitung dari data contoh halaman Materi dan Tugas. */
-function buildReport() {
-  const courses = COURSES.filter(isEnrolled)
-  const modules = courses.flatMap((course) => course.modules)
-  const submitted = TASKS.filter((task) => task.status !== 'belum')
-  const scores = TASKS.flatMap((task) => (task.score === undefined ? [] : [task.score]))
-  const studyMinutes = courses.reduce((sum, course) => sum + course.studyMinutes, 0)
-
-  const subjects = [...new Set([...courses.map((course) => course.subject), ...TASKS.map((task) => task.subject)])]
-  const subjectRows = subjects.map((subject) => {
-    const course = courses.find((item) => item.subject === subject)
-    const tasks = TASKS.filter((task) => task.subject === subject)
-    return {
-      subject,
-      progress: course ? (course.progress ?? 0) : null,
-      submitted: tasks.filter((task) => task.status !== 'belum').length,
-      totalTasks: tasks.length,
-      average: average(tasks.flatMap((task) => (task.score === undefined ? [] : [task.score]))),
-      minutes: course && course.studyMinutes > 0 ? course.studyMinutes : null,
-    }
-  })
-
-  const today = new Date()
-  const hours = [...PAST_MONTH_HOURS, Math.round(studyMinutes / 60)]
-  const months: MonthStat[] = hours.map((value, index) => ({
-    date: new Date(today.getFullYear(), today.getMonth() - (hours.length - 1 - index), 1),
-    hours: value,
-    activeDays: ACTIVE_DAYS[index],
+/** Laporan dari API → bentuk yang dipakai tampilan (tanpa angka contoh). */
+function buildReport(data: StudentReport) {
+  const months: MonthStat[] = data.months.map((month) => ({
+    date: new Date(`${month.month}-01T00:00:00`),
+    hours: month.hours,
+    activeDays: month.active_days,
   }))
 
   return {
-    courseCount: courses.length,
-    modulesDone: modules.filter((module) => module.status === 'done').length,
-    modulesTotal: modules.length,
-    tasksSubmitted: submitted.length,
-    tasksTotal: TASKS.length,
-    averageScore: average(scores),
-    xp: submitted.reduce((sum, task) => sum + task.xp, 0),
-    subjectRows,
+    courseCount: data.courses_count,
+    modulesDone: data.modules_done,
+    modulesTotal: data.modules_total,
+    tasksSubmitted: data.assignments_submitted,
+    tasksTotal: data.assignments_total,
+    averageScore: data.average_score,
+    xp: data.xp_earned,
+    attendanceRate: data.attendance_percent,
+    subjects: data.subjects.map((row) => ({
+      subject: row.subject,
+      progress: row.progress,
+      submitted: row.submitted,
+      totalTasks: row.total,
+      average: row.average,
+      minutes: row.minutes,
+    })),
     months,
   }
 }
 
-const REPORT = buildReport()
-
 export default function SiswaLaporan() {
   const [tab, setTab] = useState<Tab>('ringkasan')
-  const [monthIndex, setMonthIndex] = useState(REPORT.months.length - 1)
-  const month = REPORT.months[monthIndex]
-  const lastDay = new Date(month.date.getFullYear(), month.date.getMonth() + 1, 0)
-  const periodRange = `1 - ${lastDay.getDate()} ${monthShort.format(lastDay)} ${lastDay.getFullYear()}`
+  const [month, setMonth] = useState<string | undefined>(undefined)
+  const report = useApiData(() => fetchStudentReport(month), [month])
+
+  const data = report.data
+  const model = useMemo(() => (data ? buildReport(data) : null), [data])
+  const monthIndex = data ? Math.max(0, data.months.findIndex((item) => item.month === data.month)) : 0
+  const currentMonth = model?.months[monthIndex]
+  const lastDay = currentMonth ? new Date(currentMonth.date.getFullYear(), currentMonth.date.getMonth() + 1, 0) : null
+  const periodRange = currentMonth && lastDay
+    ? `1 - ${lastDay.getDate()} ${new Intl.DateTimeFormat('id-ID', { month: 'short' }).format(lastDay)} ${lastDay.getFullYear()}`
+    : '—'
 
   const downloadReport = () => {
+    if (!model || !currentMonth) return
     const lines = [
-      ['Laporan Belajar', monthYear.format(month.date)],
-      ['Total Belajar (jam)', month.hours],
-      ['Total Hari Aktif', month.activeDays],
-      ['Kelas Diikuti', REPORT.courseCount],
-      ['Rata-rata Kehadiran (%)', ATTENDANCE_RATE],
-      ['Materi Selesai', `${REPORT.modulesDone}/${REPORT.modulesTotal}`],
-      ['Tugas Dikumpulkan', `${REPORT.tasksSubmitted}/${REPORT.tasksTotal}`],
-      ['Rata-rata Nilai', REPORT.averageScore === null ? '-' : numberFormat.format(REPORT.averageScore)],
-      ['XP Didapatkan', REPORT.xp],
+      ['Laporan Belajar', data ? data.month_label : ''],
+      ['Total Belajar (jam)', currentMonth.hours],
+      ['Total Hari Aktif', currentMonth.activeDays],
+      ['Kelas Diikuti', model.courseCount],
+      ['Rata-rata Kehadiran (%)', model.attendanceRate ?? '-'],
+      ['Materi Selesai', `${model.modulesDone}/${model.modulesTotal}`],
+      ['Tugas Dikumpulkan', `${model.tasksSubmitted}/${model.tasksTotal}`],
+      ['Rata-rata Nilai', model.averageScore === null ? '-' : numberFormat.format(model.averageScore)],
+      ['XP Didapatkan', model.xp],
       [],
       ['Mata Pelajaran', 'Progres Materi (%)', 'Tugas', 'Rata-rata Nilai', 'Total Belajar'],
-      ...REPORT.subjectRows.map((row) => [
+      ...model.subjects.map((row) => [
         row.subject,
-        row.progress ?? '-',
+        row.progress,
         row.totalTasks ? `${row.submitted}/${row.totalTasks}` : '-',
         row.average === null ? '-' : numberFormat.format(row.average),
-        row.minutes === null ? '-' : formatMinutes(row.minutes),
+        row.minutes > 0 ? formatMinutes(row.minutes) : '-',
       ]),
     ]
-    downloadCsv(lines, `laporan-${month.date.getFullYear()}-${String(month.date.getMonth() + 1).padStart(2, '0')}.csv`)
+    downloadCsv(lines, `laporan-${currentMonth.date.getFullYear()}-${String(currentMonth.date.getMonth() + 1).padStart(2, '0')}.csv`)
   }
 
   return (
@@ -165,43 +145,50 @@ export default function SiswaLaporan() {
           ))}
         </div>
 
-        {tab === 'ringkasan' && (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard Icon={Clock} iconClass="bg-orange-50 text-orange-500" label="Total Belajar" value={`${month.hours} jam`} />
-            <StatCard
-              Icon={BookOpen}
-              iconClass="bg-blue-50 text-blue-600"
-              label="Materi Selesai"
-              value={`${REPORT.modulesDone}/${REPORT.modulesTotal}`}
-              progress={REPORT.modulesDone / REPORT.modulesTotal}
-              barClass="bg-blue-700"
-            />
-            <StatCard
-              Icon={Target}
-              iconClass="bg-indigo-50 text-indigo-600"
-              label="Tugas Dikumpulkan"
-              value={`${REPORT.tasksSubmitted}/${REPORT.tasksTotal}`}
-              progress={REPORT.tasksSubmitted / REPORT.tasksTotal}
-              barClass="bg-purple-600"
-            />
-            <StatCard
-              Icon={BadgeCheck}
-              iconClass="bg-emerald-50 text-emerald-600"
-              label="Rata-rata Nilai"
-              value={REPORT.averageScore === null ? '—' : numberFormat.format(REPORT.averageScore)}
-            />
-            <StatCard Icon={Star} iconClass="bg-red-100 text-red-600 [&>svg]:fill-current" label="XP Didapatkan" value={`+${REPORT.xp.toLocaleString('id-ID')} XP`} />
-          </div>
-        )}
+        {report.loading && !data && <Spinner label="Memuat laporan…" />}
+        {report.error && <ErrorState error={report.error} onRetry={report.reload} />}
 
-        {(tab === 'ringkasan' || tab === 'akademik') && (
+        {data && model && currentMonth && (
           <>
-            <StudyChart months={REPORT.months} />
-            <SubjectTable />
+            {tab === 'ringkasan' && (
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <StatCard Icon={Clock} iconClass="bg-orange-50 text-orange-500" label="Total Belajar" value={`${currentMonth.hours} jam`} />
+                <StatCard
+                  Icon={BookOpen}
+                  iconClass="bg-blue-50 text-blue-600"
+                  label="Materi Selesai"
+                  value={`${model.modulesDone}/${model.modulesTotal}`}
+                  progress={model.modulesTotal ? model.modulesDone / model.modulesTotal : 0}
+                  barClass="bg-blue-700"
+                />
+                <StatCard
+                  Icon={Target}
+                  iconClass="bg-indigo-50 text-indigo-600"
+                  label="Tugas Dikumpulkan"
+                  value={`${model.tasksSubmitted}/${model.tasksTotal}`}
+                  progress={model.tasksTotal ? model.tasksSubmitted / model.tasksTotal : 0}
+                  barClass="bg-purple-600"
+                />
+                <StatCard
+                  Icon={BadgeCheck}
+                  iconClass="bg-emerald-50 text-emerald-600"
+                  label="Rata-rata Nilai"
+                  value={model.averageScore === null ? '—' : numberFormat.format(model.averageScore)}
+                />
+                <StatCard Icon={Star} iconClass="bg-red-100 text-red-600 [&>svg]:fill-current" label="XP Didapatkan" value={`+${model.xp.toLocaleString('id-ID')} XP`} />
+              </div>
+            )}
+
+            {(tab === 'ringkasan' || tab === 'akademik') && (
+              <>
+                <StudyChart months={model.months} />
+                <SubjectTable model={model} />
+              </>
+            )}
+            {tab === 'tugas' && <TaskTable tasks={data.tasks} />}
+            {tab === 'bimbingan' && <SessionTable sessions={data.sessions} attendanceRate={model.attendanceRate} />}
           </>
         )}
-        {tab === 'tugas' && <TaskTable />}
-        {tab === 'bimbingan' && <SessionTable />}
       </div>
 
       <aside className="space-y-4">
@@ -209,16 +196,20 @@ export default function SiswaLaporan() {
           <CalendarDays className="h-7 w-7 text-slate-800" strokeWidth={1.5} aria-hidden />
           <span className="flex-1">
             <span className="block text-sm text-slate-500">Periode</span>
-            <span className="text-slate-900">{monthYear.format(month.date)}</span>
+            <span className="text-slate-900">{currentMonth ? monthYear.format(currentMonth.date) : '—'}</span>
           </span>
           <ChevronDown className="h-5 w-5 text-slate-700" aria-hidden />
           <select
             value={monthIndex}
-            onChange={(event) => setMonthIndex(Number(event.target.value))}
+            onChange={(event) => {
+              const index = Number(event.target.value)
+              setMonth(data?.months[index]?.month)
+            }}
             className="absolute inset-0 cursor-pointer opacity-0"
             aria-label="Pilih periode laporan"
+            disabled={!data}
           >
-            {REPORT.months.map((item, index) => (
+            {(model?.months ?? []).map((item, index) => (
               <option key={item.date.toISOString()} value={index}>
                 {monthYear.format(item.date)}
               </option>
@@ -231,9 +222,9 @@ export default function SiswaLaporan() {
           <dl className="mt-3">
             {[
               ['Periode', periodRange],
-              ['Total Hari Aktif', `${month.activeDays} hari`],
-              ['Kelas Diikuti', `${REPORT.courseCount} kelas`],
-              ['Rata-rata Kehadiran', `${ATTENDANCE_RATE}%`],
+              ['Total Hari Aktif', `${currentMonth?.activeDays ?? 0} hari`],
+              ['Kelas Diikuti', `${model?.courseCount ?? 0} kelas`],
+              ['Rata-rata Kehadiran', model?.attendanceRate === null || model?.attendanceRate === undefined ? '—' : `${model.attendanceRate}%`],
             ].map(([label, value]) => (
               <div key={label} className="flex justify-between gap-4 border-b border-slate-200 px-10 py-3">
                 <dt className="text-slate-900">{label}</dt>
@@ -249,19 +240,23 @@ export default function SiswaLaporan() {
         <section className="rounded-2xl border-2 border-slate-200 bg-white px-4 py-5">
           <h2 className="px-1 text-xl font-semibold text-slate-900">Pencapaian Terbaru</h2>
           <ul className="mt-4 space-y-5 border-b border-slate-200 pb-5">
-            {ACHIEVEMENTS.map(({ Icon, className, title, date }) => (
-              <li key={title} className="flex items-center gap-4">
-                <span className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full ${className}`}>
-                  <Icon className="h-8 w-8" strokeWidth={1.75} aria-hidden />
-                </span>
-                <div>
-                  <p className="font-semibold text-slate-900">{title}</p>
-                  <p className="text-xs text-slate-500">{formatDate(date)}</p>
-                </div>
-              </li>
-            ))}
+            {(data?.achievements ?? []).map((achievement) => {
+              const style = ACHIEVEMENT_STYLE[achievement.type] ?? ACHIEVEMENT_STYLE.first_submission
+
+              return (
+                <li key={achievement.title} className="flex items-center gap-4">
+                  <span className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full ${style.className}`}>
+                    <style.Icon className="h-8 w-8" strokeWidth={1.75} aria-hidden />
+                  </span>
+                  <div>
+                    <p className="font-semibold text-slate-900">{achievement.title}</p>
+                    <p className="text-xs text-slate-500">{formatDate(achievement.achieved_at)}</p>
+                  </div>
+                </li>
+              )
+            })}
+            {data && data.achievements.length === 0 && <li className="text-sm text-slate-500">Belum ada pencapaian.</li>}
           </ul>
-          {/* Halaman semua pencapaian belum ada. */}
           <button type="button" className="mt-4 flex items-center gap-8 text-blue-600 hover:underline">
             Lihat Semua Pencapaian
             <span className="flex h-4 w-4 items-center justify-center rounded bg-indigo-100">
@@ -305,7 +300,7 @@ function StatCard({
   )
 }
 
-function SubjectTable() {
+function SubjectTable({ model }: { model: ReturnType<typeof buildReport> }) {
   return (
     <section className="mt-6 rounded-xl border border-slate-200 bg-white px-4 py-4">
       <h2 className="font-semibold text-slate-900">Performa per Mata Pelajaran</h2>
@@ -321,7 +316,7 @@ function SubjectTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 text-xs text-slate-900">
-            {REPORT.subjectRows.map((row) => (
+            {model.subjects.map((row) => (
               <tr key={row.subject}>
                 <td className="px-2 py-1.5">
                   <span className="flex items-center gap-3 font-semibold">
@@ -332,24 +327,27 @@ function SubjectTable() {
                   </span>
                 </td>
                 <td className="px-4 py-1.5">
-                  {row.progress === null ? (
-                    '—'
-                  ) : (
-                    <span className="flex items-center gap-1">
-                      <span className="w-8">{row.progress}%</span>
-                      <span className="h-1 w-36 overflow-hidden bg-slate-300">
-                        <span className="block h-full bg-blue-700" style={{ width: `${row.progress}%` }} />
-                      </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-8">{row.progress}%</span>
+                    <span className="h-1 w-36 overflow-hidden bg-slate-300">
+                      <span className="block h-full bg-blue-700" style={{ width: `${row.progress}%` }} />
                     </span>
-                  )}
+                  </span>
                 </td>
                 <td className="px-4 py-1.5 text-center">{row.totalTasks ? `${row.submitted} / ${row.totalTasks}` : '—'}</td>
                 <td className="px-4 py-1.5 text-center text-base font-semibold text-emerald-600">
                   {row.average === null ? <span className="text-slate-400">—</span> : numberFormat.format(row.average)}
                 </td>
-                <td className="px-4 py-1.5 text-center font-semibold">{row.minutes === null ? '—' : formatMinutes(row.minutes)}</td>
+                <td className="px-4 py-1.5 text-center font-semibold">{row.minutes > 0 ? formatMinutes(row.minutes) : '—'}</td>
               </tr>
             ))}
+            {model.subjects.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-4 text-center text-slate-500">
+                  Belum ada kursus yang diikuti.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -357,7 +355,7 @@ function SubjectTable() {
   )
 }
 
-function TaskTable() {
+function TaskTable({ tasks }: { tasks: StudentReport['tasks'] }) {
   return (
     <section className="mt-6 rounded-xl border border-slate-200 bg-white px-4 py-4">
       <h2 className="font-semibold text-slate-900">Laporan Tugas</h2>
@@ -373,19 +371,26 @@ function TaskTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 text-slate-900">
-            {TASKS.map((task) => (
+            {tasks.map((task) => (
               <tr key={task.id}>
                 <td className="px-4 py-2.5 font-semibold">{task.title}</td>
-                <td className="px-4 py-2.5">{task.subject}</td>
+                <td className="px-4 py-2.5">{task.subject ?? '—'}</td>
                 <td className="px-4 py-2.5">
-                  <span className={`rounded-lg px-3 py-1 text-xs ${TASK_STATUS[task.status].badge}`}>{TASK_STATUS[task.status].label}</span>
+                  <span className={`rounded-lg px-3 py-1 text-xs ${TASK_STATUS[task.state.status].badge}`}>{TASK_STATUS[task.state.status].label}</span>
                 </td>
                 <td className="px-4 py-2.5 text-center font-semibold text-emerald-600">
-                  {task.score === undefined ? <span className="text-slate-400">—</span> : numberFormat.format(task.score)}
+                  {task.state.score === null ? <span className="text-slate-400">—</span> : numberFormat.format(task.state.score)}
                 </td>
-                <td className="px-4 py-2.5 text-center">{task.status === 'belum' ? '—' : `+${task.xp}`}</td>
+                <td className="px-4 py-2.5 text-center">{task.state.status === 'belum' ? '—' : `+${task.xp_points}`}</td>
               </tr>
             ))}
+            {tasks.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-4 text-center text-slate-500">
+                  Belum ada tugas.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -393,13 +398,12 @@ function TaskTable() {
   )
 }
 
-function SessionTable() {
-  const sessions = SCHEDULE.filter((item) => item.type === 'bimbingan')
+function SessionTable({ sessions, attendanceRate }: { sessions: StudentReport['sessions']; attendanceRate: number | null }) {
   return (
     <section className="mt-6 rounded-xl border border-slate-200 bg-white px-4 py-4">
       <h2 className="font-semibold text-slate-900">Laporan Bimbingan</h2>
       <p className="mt-1 text-sm text-slate-500">
-        Rata-rata kehadiran {ATTENDANCE_RATE}%. Kehadiran tercatat saat menekan "Gabung sesi".
+        Rata-rata kehadiran {attendanceRate === null ? '—' : `${attendanceRate}%`}. Kehadiran tercatat saat menekan &quot;Gabung sesi&quot;.
       </p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[36rem] text-left text-sm">
@@ -414,15 +418,25 @@ function SessionTable() {
           <tbody className="divide-y divide-slate-200 text-slate-900">
             {sessions.map((session) => (
               <tr key={session.id}>
-                <td className="px-4 py-2.5 font-semibold">{session.title}</td>
-                <td className="px-4 py-2.5">{session.subtitle}</td>
-                <td className="px-4 py-2.5">{formatDate(session.start)}</td>
+                <td className="px-4 py-2.5 font-semibold">
+                  {session.title}
+                  {session.attended && <span className="ml-2 rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-600">Hadir</span>}
+                </td>
+                <td className="px-4 py-2.5">{session.mentor_name ?? '—'}</td>
+                <td className="px-4 py-2.5">{formatDate(session.starts_at)}</td>
                 <td className="px-4 py-2.5">
-                  {timeFormat.format(new Date(session.start))}
-                  {session.end && ` - ${timeFormat.format(new Date(session.end))}`}
+                  {session.starts_at ? timeFormat.format(new Date(session.starts_at)) : '—'}
+                  {session.ends_at && ` - ${timeFormat.format(new Date(session.ends_at))}`}
                 </td>
               </tr>
             ))}
+            {sessions.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-4 text-center text-slate-500">
+                  Belum ada sesi bimbingan.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

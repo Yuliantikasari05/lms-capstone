@@ -148,12 +148,34 @@ final class Catalog
                 'update' => ['assignments.grade', [self::ADMIN, self::MENTOR]],
             ], own: [self::MENTOR]),
 
-            // ------------------------------------------------------------------ Siswa dan Karyawan (belum dibangun)
-            self::planned('learning', 'schedule', 'Jadwal dan Deadline', 'Melihat jadwal tugas, bimbingan, dan deadline (FR-37).', [self::SISWA => ['read']], $planned),
-            self::planned('learning', 'leaderboard_student', 'Papan Peringkat', 'Melihat papan peringkat dalam satu kurikulum (FR-38).', [self::SISWA => ['read']], $planned),
-            self::planned('learning', 'my_classes', 'Kelas dan Materi yang Diikuti', 'Melihat kelas yang diikuti dan mengakses materinya (FR-39, FR-44).', [self::SISWA => ['read'], self::KARYAWAN => ['read']], $planned),
-            self::planned('assessment', 'my_assignments', 'Tugas dan Evaluasi', 'Mengakses tugas, mengerjakan, dan melihat nilai (FR-41, FR-48).', [self::SISWA => ['create', 'read'], self::KARYAWAN => ['create', 'read']], $planned),
-            self::planned('learning', 'learning_report', 'Laporan Belajar', 'Melihat laporan hasil belajar (FR-42, FR-47).', [self::SISWA => ['read'], self::KARYAWAN => ['read']], $planned),
+            // ------------------------------------------------------------------ Siswa (sudah dibangun; hanya data milik sendiri)
+            self::act('learning', 'my_classes', 'Kelas dan Materi yang Diikuti', 'Melihat kelas yang diikuti dan mengakses materinya (FR-39, FR-44).', [
+                'read' => ['learning.view', [self::SISWA]],
+            ], own: [self::SISWA]),
+            self::act('learning', 'material_progress', 'Progres Materi dan Waktu Belajar', 'Menandai materi selesai dan mencatat waktu belajar (FR-39, FR-42).', [
+                'update' => ['learning.progress', [self::SISWA]],
+            ], own: [self::SISWA]),
+            self::act('learning', 'schedule', 'Jadwal dan Deadline', 'Melihat jadwal bimbingan dan tenggat tugas yang diikuti (FR-37).', [
+                'read' => ['schedule.view', [self::SISWA]],
+            ], own: [self::SISWA]),
+            self::act('learning', 'attendance', 'Kehadiran Sesi Bimbingan', 'Bergabung ke sesi bimbingan dan mencatat kehadiran (aturan 2 Nov 2026).', [
+                'create' => ['schedule.join', [self::SISWA]],
+            ], own: [self::SISWA]),
+            self::act('assessment', 'my_assignments', 'Tugas dan Evaluasi', 'Mengerjakan tugas, kuis, ujian, dan melihat nilai (FR-41, FR-48).', [
+                'create' => ['assignments.submit', [self::SISWA]],
+                'read' => ['assignments.submit', [self::SISWA]],
+            ], own: [self::SISWA]),
+            self::act('learning', 'learning_report', 'Laporan Belajar', 'Melihat laporan hasil belajar (FR-42, FR-47).', [
+                'read' => ['reports.view', [self::SISWA]],
+            ], own: [self::SISWA]),
+            self::act('learning', 'leaderboard_student', 'Papan Peringkat', 'Melihat papan peringkat Siswa (FR-38).', [
+                'read' => ['leaderboard.view', [self::SISWA]],
+            ], own: [self::SISWA]),
+
+            // ------------------------------------------------------------------ Karyawan (belum dibangun)
+            self::planned('learning', 'karyawan_classes', 'Kelas dan Materi Karyawan', 'Melihat pelatihan/webinar yang diikuti dan materinya (FR-44).', [self::KARYAWAN => ['read']], $planned),
+            self::planned('assessment', 'karyawan_assignments', 'Tugas dan Evaluasi Karyawan', 'Mengerjakan evaluasi pelatihan dan melihat nilai (FR-48).', [self::KARYAWAN => ['create', 'read']], $planned),
+            self::planned('learning', 'karyawan_report', 'Laporan Belajar Karyawan', 'Melihat laporan hasil belajar pelatihan (FR-47).', [self::KARYAWAN => ['read']], $planned),
             self::planned('payment', 'payment', 'Pembayaran Kelas', 'Membayar kelas atau webinar yang akan diikuti (FR-40, FR-45).', [self::SISWA => ['create'], self::KARYAWAN => ['create']], $planned),
             self::planned('payment', 'certificate_request', 'Pengajuan Sertifikat', 'Mengajukan sertifikasi dari pelatihan atau webinar (FR-46).', [self::KARYAWAN => ['create', 'read']], $planned),
 

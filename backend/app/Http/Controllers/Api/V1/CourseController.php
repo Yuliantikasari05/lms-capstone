@@ -11,12 +11,15 @@ use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\LearningNotification;
 use App\Support\Like;
+use App\Support\Notifications\NotificationRecipients;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -78,6 +81,8 @@ class CourseController extends Controller
             return $course;
         });
 
+        $this->notifyCourseCreatedByMentor($course, $actor);
+
         return (new CourseResource($this->withSummary($course)))
             ->additional(['message' => 'Kursus berhasil dibuat.'])
             ->response()
@@ -133,6 +138,18 @@ class CourseController extends Controller
             }
         });
 
+        if ($course->mentor_id !== null && $course->mentor_id !== $previous) {
+            $course->mentor?->notify(new LearningNotification(
+                LearningNotification::CATEGORY_SYSTEM,
+                'Anda ditunjuk mengampu '.$course->title,
+                $request->user()->name.' menetapkan Anda sebagai Mentor kursus ini. Lengkapi modul dan jadwal agar peserta bisa mulai belajar.',
+                $request->user()->name,
+                $request->user()->roles->first()?->name ?? 'Admin',
+                'Buka kursus',
+                '/mentor/courses/'.$course->id,
+            ));
+        }
+
         return (new CourseResource($this->withSummary($course)))->additional(['message' => 'Mentor kursus berhasil diperbarui.']);
     }
 
@@ -153,6 +170,29 @@ class CourseController extends Controller
         });
 
         return response()->json(['message' => 'Kursus berhasil dihapus.']);
+    }
+
+    /** Kursus yang dibuat Mentor perlu diketahui Admin pemegang izin lihat kursus. */
+    private function notifyCourseCreatedByMentor(Course $course, User $actor): void
+    {
+        if (! $actor->hasRole(Role::MENTOR)) {
+            return;
+        }
+
+        $admins = NotificationRecipients::withPermission('courses.view', $actor, [Role::ADMIN]);
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        Notification::send($admins, new LearningNotification(
+            LearningNotification::CATEGORY_SYSTEM,
+            'Kursus baru dari Mentor: '.$course->title,
+            $actor->name.' membuat kursus '.$course->typeLabel().' baru. Tinjau kelengkapannya sebelum kursus diaktifkan.',
+            $actor->name,
+            'Mentor',
+            'Lihat kursus',
+            '/admin/courses',
+        ));
     }
 
     private function withSummary(Course $course): Course

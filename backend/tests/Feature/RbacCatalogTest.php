@@ -73,8 +73,12 @@ class RbacCatalogTest extends TestCase
         $adminCan = Catalog::assignable(Catalog::ADMIN);
         $notForAdmin = array_values(array_diff(Catalog::enforcedSlugs(), $adminCan));
 
-        // Satu-satunya izin yang tidak berlaku untuk Admin adalah dashboard role lain.
-        $this->assertEqualsCanonicalizing(['dashboard.mentor', 'dashboard.siswa', 'dashboard.karyawan', 'dashboard.lembaga'], $notForAdmin);
+        // Admin tidak memakai dashboard role lain, dan fitur belajar Siswa hanya untuk pemilik datanya sendiri.
+        $this->assertEqualsCanonicalizing([
+            'dashboard.mentor', 'dashboard.siswa', 'dashboard.karyawan', 'dashboard.lembaga',
+            'learning.view', 'learning.progress', 'assignments.submit', 'schedule.view', 'schedule.join',
+            'reports.view', 'leaderboard.view',
+        ], $notForAdmin);
     }
 
     public function test_privilege_escalating_permissions_are_for_admin_only(): void
@@ -103,8 +107,12 @@ class RbacCatalogTest extends TestCase
             'assignments.view', 'assignments.manage', 'assignments.grade',
         ], Catalog::assignable(Catalog::MENTOR));
         $this->assertEqualsCanonicalizing(['dashboard.lembaga', 'courses.view', 'courses.update', 'content.manage'], Catalog::assignable(Catalog::LEMBAGA));
-        // Siswa dan Karyawan: belum ada API untuk mereka, jadi hanya dashboard.
-        $this->assertSame(['dashboard.siswa'], Catalog::assignable(Catalog::SISWA));
+        // Siswa: fitur belajar yang hanya menyentuh data miliknya sendiri (enrollment aktif).
+        $this->assertEqualsCanonicalizing([
+            'dashboard.siswa', 'learning.view', 'learning.progress', 'assignments.submit',
+            'schedule.view', 'schedule.join', 'reports.view', 'leaderboard.view',
+        ], Catalog::assignable(Catalog::SISWA));
+        // Karyawan belum punya API fitur belajar, jadi hanya dashboard.
         $this->assertSame(['dashboard.karyawan'], Catalog::assignable(Catalog::KARYAWAN));
     }
 

@@ -44,6 +44,12 @@ class RbacEnforcementTest extends TestCase
         'POST api/v1/auth/logout',
         'POST api/v1/auth/password',
         'GET api/v1/auth/me',
+        // Notifikasi selalu tersedia untuk akun yang login dan hanya mengembalikan data miliknya sendiri.
+        'GET api/v1/notifications',
+        'POST api/v1/notifications/read-all',
+        'DELETE api/v1/notifications',
+        'PATCH api/v1/notifications/{notification}/read',
+        'DELETE api/v1/notifications/{notification}',
     ];
 
     /** Status yang berarti "lolos otorisasi" (respons sukses atau galat validasi). */
@@ -135,6 +141,23 @@ class RbacEnforcementTest extends TestCase
                 fn ($f) => ['DELETE', "$base/settings/roles/{$f->customRole->id}"],
             ],
             'dashboard.admin' => [fn ($f) => ['GET', "$base/admin/summary"]],
+
+            // Fitur belajar Siswa: hanya data milik peserta sendiri (enrollment aktif pada kursus aktif).
+            'learning.view' => [
+                fn ($f) => ['GET', "$base/siswa/summary"],
+                fn ($f) => ['GET', "$base/siswa/courses"],
+                fn ($f) => ['GET', "$base/siswa/courses/{$f->ownCourse->id}"],
+            ],
+            'learning.progress' => [fn ($f) => ['POST', "$base/siswa/materials/{$f->ownMaterial->id}/complete"]],
+            'schedule.view' => [fn ($f) => ['GET', "$base/siswa/schedule"]],
+            'schedule.join' => [fn ($f) => ['POST', "$base/siswa/sessions/{$f->ownSession->id}/join"]],
+            'assignments.submit' => [
+                fn ($f) => ['GET', "$base/siswa/assignments"],
+                fn ($f) => ['GET', "$base/siswa/assignments/{$f->ownAssignment->id}"],
+                fn ($f) => ['POST', "$base/siswa/assignments/{$f->ownAssignment->id}/submissions", ['answers' => []]],
+            ],
+            'reports.view' => [fn ($f) => ['GET', "$base/siswa/report"]],
+            'leaderboard.view' => [fn ($f) => ['GET', "$base/siswa/leaderboard"]],
         ];
     }
 
@@ -192,6 +215,15 @@ class RbacEnforcementTest extends TestCase
             'participants.create' => [fn ($f) => ['POST', "$b/courses/{$f->course->id}/enrollments", ['user_ids' => [$f->student->id]]]],
             'participants.read' => [fn ($f) => ['GET', "$b/courses/{$f->course->id}/enrollments"], fn ($f) => ['GET', "$b/courses/{$f->course->id}/enrollment-candidates"]],
             'participants.delete' => [fn ($f) => ['DELETE', "$b/enrollments/{$f->enrollment->id}"]],
+
+            'my_classes.read' => [fn ($f) => ['GET', "$b/siswa/courses"], fn ($f) => ['GET', "$b/siswa/courses/{$f->ownCourse->id}"]],
+            'material_progress.update' => [fn ($f) => ['POST', "$b/siswa/materials/{$f->ownMaterial->id}/complete"]],
+            'schedule.read' => [fn ($f) => ['GET', "$b/siswa/schedule"]],
+            'attendance.create' => [fn ($f) => ['POST', "$b/siswa/sessions/{$f->ownSession->id}/join"]],
+            'my_assignments.read' => [fn ($f) => ['GET', "$b/siswa/assignments"], fn ($f) => ['GET', "$b/siswa/assignments/{$f->ownAssignment->id}"]],
+            'my_assignments.create' => [fn ($f) => ['POST', "$b/siswa/assignments/{$f->ownAssignment->id}/submissions", ['answers' => []]]],
+            'learning_report.read' => [fn ($f) => ['GET', "$b/siswa/report"]],
+            'leaderboard_student.read' => [fn ($f) => ['GET', "$b/siswa/leaderboard"]],
 
             'coupons.create' => [fn ($f) => ['POST', "$b/coupons", ['code' => 'CELL'.random_int(100, 999), 'discount_type' => 'percentage', 'discount_value' => 10]]],
             'coupons.read' => [fn ($f) => ['GET', "$b/coupons"], fn ($f) => ['GET', "$b/coupons/{$f->coupon->id}"]],
@@ -307,6 +339,32 @@ class RbacEnforcementTest extends TestCase
         };
 
         $n = ++$this->seq;
+
+        // Data milik peserta sendiri, dipakai probe fitur belajar Siswa. Selalu dibuat agar probe
+        // bisa dipanggil dari role mana pun (role yang tidak berhak tetap mendapat 403).
+        $ownCourse = Course::factory()->academic()->active()->mentoredBy($this->userWithRole(Role::MENTOR))->create();
+            Enrollment::factory()->create(['course_id' => $ownCourse->id, 'user_id' => $actor->id, 'status' => Enrollment::STATUS_ACTIVE]);
+            $ownModule = CourseModule::factory()->create(['course_id' => $ownCourse->id]);
+            $ownMaterial = Material::factory()->create(['course_module_id' => $ownModule->id, 'xp_points' => 10]);
+            $ownSession = ClassSession::factory()->create([
+                'course_id' => $ownCourse->id,
+                'starts_at' => now()->subMinutes(5),
+                'ends_at' => now()->addHour(),
+                'status' => ClassSession::STATUS_SCHEDULED,
+                'mode' => ClassSession::MODE_ONLINE,
+                'meeting_url' => 'https://meet.google.com/uji-rbac',
+            ]);
+            $ownAssignment = Assignment::create([
+                'course_id' => $ownCourse->id,
+                'title' => 'Tugas Siswa '.$n,
+                'kind' => Assignment::KIND_TASK,
+                'status' => Assignment::STATUS_APPROVED,
+                'is_active' => true,
+                'starts_at' => now()->subHour(),
+                'due_at' => now()->addDay(),
+                'xp_points' => 0,
+        ]);
+
         $institution = Institution::factory()->withBank()->create();
         Transaction::factory()->amount(1_000_000)->create(['institution_id' => $institution->id]);
         $module = CourseModule::factory()->create(['course_id' => $course->id]);
@@ -331,6 +389,10 @@ class RbacEnforcementTest extends TestCase
             'emptyInstitution' => Institution::factory()->create(),
             'payout' => InstitutionPayout::create(['code' => 'PO-RBAC-'.$n, 'amount' => 1000, 'institution_id' => $institution->id]),
             'customRole' => Role::create(['slug' => 'peran-fixture-'.$n, 'name' => 'Peran Fixture '.$n]),
+            'ownCourse' => $ownCourse,
+            'ownMaterial' => $ownMaterial,
+            'ownSession' => $ownSession,
+            'ownAssignment' => $ownAssignment,
         ];
     }
 
@@ -554,6 +616,12 @@ class RbacEnforcementTest extends TestCase
         usort($routes, fn ($a, $b) => (int) ($a[0] !== 'GET') <=> (int) ($b[0] !== 'GET'));
 
         foreach ($routes as [$method, $uri, $names]) {
+            // Rute /siswa/* hanya mengembalikan data milik peserta yang login (peran Siswa), sama seperti
+            // batas kepemilikan pada Policy: Admin pun tidak boleh membaca data belajar orang lain lewat rute ini.
+            if (str_starts_with($uri, '/api/v1/siswa/')) {
+                continue;
+            }
+
             $status = $this->asUser($probeAdmin)->json($method, $this->resolve($uri, $names, $fixtures))->getStatusCode();
 
             if (in_array($status, [401, 403], true)) {
