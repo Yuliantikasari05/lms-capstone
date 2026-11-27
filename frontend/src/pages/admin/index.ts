@@ -5,6 +5,7 @@ import AdminDashboard from './AdminDashboard'
 import AdminGamifikasi from './Gamifikasi'
 import AdminLembagaBimbingan from './LembagaBimbingan'
 import AdminManajemenKupon from './ManajemenKupon'
+import AdminNotifikasi from './Notifikasi'
 import CoursesPage from './CoursesPage'
 import AdminPengaturan from './Pengaturan'
 import UsersPage from './UsersPage'
@@ -20,5 +21,8 @@ export const adminPages: Record<string, ComponentType> = {
   settings: AdminPengaturan,
 }
 
-/** Halaman Admin di luar menu. Profil dibuka dari menu akun di kanan atas. */
-export const adminRoutes: ExtraRoute[] = [{ path: 'profile', Page: ProfilePage }]
+/** Halaman Admin di luar menu (dibuka dari lonceng dan menu akun di kanan atas). */
+export const adminRoutes: ExtraRoute[] = [
+  { path: 'notifications', Page: AdminNotifikasi },
+  { path: 'profile', Page: ProfilePage },
+]

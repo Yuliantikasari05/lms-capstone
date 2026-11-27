@@ -128,13 +128,19 @@ class RoleSettingsTest extends TestCase
     public function test_planned_features_are_listed_but_unavailable(): void
     {
         $matrix = collect($this->asAdmin()->getJson($this->url(Role::SISWA))->json('matrix'))->flatMap(fn ($m) => $m['activities'])->keyBy('key');
+        $employeeMatrix = collect($this->asAdmin()->getJson($this->url(Role::KARYAWAN))->json('matrix'))->flatMap(fn ($m) => $m['activities'])->keyBy('key');
 
-        $this->assertSame('planned', $matrix['leaderboard_student']['status']);
-        $cell = collect($matrix['leaderboard_student']['cells'])->firstWhere('action', 'read');
+        // Karyawan belum punya API fitur belajar: barisnya tetap tampil tetapi tidak dapat dinyalakan.
+        $this->assertSame('planned', $employeeMatrix['karyawan_classes']['status']);
+        $cell = collect($employeeMatrix['karyawan_classes']['cells'])->firstWhere('action', 'read');
         $this->assertSame('unavailable', $cell['state']);
         $this->assertNull($cell['slug']);
         $this->assertFalse($cell['editable']);
         $this->assertSame('Fitur belum dibangun.', $cell['reason']);
+
+        // Papan peringkat Siswa sudah dibangun, jadi selnya aktif dan punya izin penegakan.
+        $this->assertSame('active', $matrix['leaderboard_student']['status']);
+        $this->assertSame('leaderboard.view', collect($matrix['leaderboard_student']['cells'])->firstWhere('action', 'read')['slug']);
     }
 
     public function test_the_permission_catalog_lists_activities_per_module_with_recipient_roles(): void
@@ -203,7 +209,8 @@ class RoleSettingsTest extends TestCase
 
     public function test_a_change_that_changes_nothing_writes_no_log(): void
     {
-        $this->asAdmin()->patchJson($this->url(Role::SISWA), ['permissions' => ['dashboard.siswa']])->assertOk();
+        // Mengirim izin yang sekarang memang dipegang role tidak boleh menulis log.
+        $this->asAdmin()->patchJson($this->url(Role::SISWA), ['permissions' => $this->permissionsOf(Role::SISWA)])->assertOk();
 
         $this->assertSame(0, AuditLog::where('action', 'role.updated')->count());
     }
@@ -256,7 +263,7 @@ class RoleSettingsTest extends TestCase
     {
         foreach ([Role::SISWA, Role::KARYAWAN] as $slug) {
             $this->asAdmin()->patchJson($this->url($slug), ['permissions' => ["dashboard.{$slug}", 'courses.view']])->assertStatus(422)->assertJsonValidationErrors(['permissions']);
-            $this->assertSame(["dashboard.{$slug}"], $this->permissionsOf($slug));
+            $this->assertSame(collect(RolePermissionSeeder::MATRIX[$slug])->sort()->values()->all(), $this->permissionsOf($slug));
         }
     }
 
@@ -550,7 +557,7 @@ class RoleSettingsTest extends TestCase
         $this->artisan('lms:reset-role-permissions', ['--prune' => true, '--force' => true])->assertSuccessful();
 
         $this->assertSame(['coupons.view'], Role::findOrFail($id)->permissions()->pluck('slug')->all());
-        $this->assertSame(['dashboard.siswa'], $this->permissionsOf(Role::SISWA));
+        $this->assertSame(collect(RolePermissionSeeder::MATRIX['siswa'])->sort()->values()->all(), $this->permissionsOf(Role::SISWA));
         $this->assertSame(collect(RolePermissionSeeder::MATRIX['admin'])->sort()->values()->all(), $this->permissionsOf(Role::ADMIN)); // role yang sah tidak tersentuh
     }
 }

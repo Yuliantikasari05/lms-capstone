@@ -37,6 +37,12 @@ Route::prefix('v1')->group(function () {
             // Modul kursus (kursus, modul, materi, sesi, peserta): lihat routes/api/courses.php
             require __DIR__.'/api/courses.php';
 
+            // Modul belajar Siswa (dashboard, materi, tugas, jadwal, laporan, peringkat): lihat routes/api/learning.php
+            require __DIR__.'/api/learning.php';
+
+            // Notifikasi pengguna (self-service): lihat routes/api/notifications.php
+            require __DIR__.'/api/notifications.php';
+
             // Manajemen Kupon Admin: lihat routes/api/coupons.php
             require __DIR__.'/api/coupons.php';
 

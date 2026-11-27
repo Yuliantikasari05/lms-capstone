@@ -1,7 +1,10 @@
 import { ArrowLeft, ChevronRight, Search, Star } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { COURSES, formatRating, isEnrolled, type Course } from './materiData'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { useApiData } from '../../lib/useApiData'
+import { fetchStudentCourses, type StudentCourse } from './studentApi'
+import { formatRating, isEnrolled, type Course } from './materiData'
 
 type Filter = 'all' | 'running' | 'done' | 'newest' | 'lembaga'
 
@@ -36,14 +39,46 @@ function filterClass(key: Filter, active: boolean): string {
   return 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'
 }
 
+/**
+ * Menyesuaikan response API kursus Siswa ke bentuk yang dipakai kartu materi.
+ * Ulasan belum tersedia di API, jadi rating dikosongkan (bukan angka contoh).
+ */
+function toCourse(course: StudentCourse): Course {
+  const description = course.description ?? ''
+
+  return {
+    id: course.id,
+    title: course.title,
+    subject: course.title,
+    studyMinutes: course.study_minutes_this_month,
+    description,
+    tagline: description,
+    owner: course.owner,
+    rating: null,
+    progress: course.materials_done > 0 || course.progress === 100 ? course.progress : null,
+    source: course.source,
+    publishedAt: course.published_at ?? '',
+    totalXp: course.total_xp,
+    modules: (course.modules ?? []).map((module) => ({
+      id: module.id,
+      title: module.title,
+      type: 'pdf',
+      status: module.completed ? 'done' : 'todo',
+    })),
+  }
+}
+
 export default function SiswaMateri() {
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
+  const list = useApiData(fetchStudentCourses, [])
+
+  const allCourses = useMemo(() => (list.data ?? []).map(toCourse), [list.data])
 
   const keyword = query.trim().toLowerCase()
-  const courses = applyFilter(COURSES, filter).filter((course) => course.title.toLowerCase().includes(keyword))
+  const courses = applyFilter(allCourses, filter).filter((course) => course.title.toLowerCase().includes(keyword))
 
-  const enrolled = COURSES.filter(isEnrolled)
+  const enrolled = allCourses.filter(isEnrolled)
   const stats = [
     { label: 'Total Materi', value: enrolled.length, className: 'bg-blue-100 text-blue-700' },
     { label: 'Selesai', value: enrolled.filter((course) => course.progress === 100).length, className: 'bg-emerald-50 text-emerald-600' },
@@ -53,8 +88,7 @@ export default function SiswaMateri() {
   return (
     <>
       <Link to="/siswa" className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900">
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        Kembali ke Dashboard
+        <ArrowLeft className="h-4 w-4" aria-hidden /> Kembali ke Dashboard
       </Link>
 
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
@@ -86,7 +120,10 @@ export default function SiswaMateri() {
         ))}
       </div>
 
-      {courses.length === 0 ? (
+      {list.loading && !list.data && <Spinner label="Memuat kursus…" />}
+      {list.error && <ErrorState error={list.error} onRetry={list.reload} />}
+
+      {list.data && courses.length === 0 ? (
         <p className="mt-12 rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center text-slate-500">
           Tidak ada kursus yang cocok.
         </p>

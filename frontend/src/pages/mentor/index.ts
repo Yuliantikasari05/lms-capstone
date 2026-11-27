@@ -21,7 +21,6 @@ export const mentorPages: Record<string, ComponentType> = {
   assignments: MentorTugas,
   curriculum: MentorKurikulum,
   schedule: MentorJadwalBimbingan,
-  notifications: MentorNotifikasi,
   profile: MentorProfile,
 }
 

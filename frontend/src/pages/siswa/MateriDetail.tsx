@@ -1,7 +1,16 @@
 import { ArrowLeft, BookOpen, Circle, CircleCheck, CirclePlay, FileText, Star, User, Video, Zap } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { EmptyState } from '../../components/ui/States'
-import { COURSES, type CourseModule } from './materiData'
+import { EmptyState, ErrorState, Spinner } from '../../components/ui/States'
+import { useApiData } from '../../lib/useApiData'
+import {
+  completeMaterial,
+  fetchStudentCourse,
+  recordStudyMinute,
+  studentMaterialFileUrl,
+  type StudentCourseModule,
+  type StudentMaterial,
+} from './studentApi'
 
 const MODULE_TYPE = {
   video: { label: 'Video', Icon: Video },
@@ -14,26 +23,110 @@ const STATUS_ICON = {
   todo: { Icon: Circle, className: 'bg-slate-100 text-slate-400', label: 'Belum dimulai' },
 }
 
+interface ModuleRow {
+  id: number
+  title: string
+  type: 'video' | 'pdf'
+  status: 'done' | 'current' | 'todo'
+  materials: StudentMaterial[]
+}
+
+/** Ubah modul API menjadi baris modul yang dipakai tampilan (tanpa mengubah markup). */
+function toRows(modules: StudentCourseModule[]): ModuleRow[] {
+  let hasCurrent = false
+
+  return modules.map((module) => {
+    const materials = module.materials ?? []
+    const done = module.completed
+    const partiallyDone = materials.some((material) => material.completed)
+    const status: ModuleRow['status'] = done ? 'done' : partiallyDone || !hasCurrent ? 'current' : 'todo'
+    if (status === 'current') hasCurrent = true
+
+    return {
+      id: module.id,
+      title: module.title,
+      type: materials[0]?.type === 'video' ? 'video' : 'pdf',
+      status,
+      materials,
+    }
+  })
+}
+
 /** Detail kursus (/siswa/materials/:courseId). Biru untuk kursus reguler, merah untuk program Lembaga Bimbingan. */
 export default function SiswaMateriDetail() {
   const { courseId } = useParams()
-  const course = COURSES.find((item) => String(item.id) === courseId)
+  const detail = useApiData(() => fetchStudentCourse(courseId ?? ''), [courseId])
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
-  if (!course) {
+  const course = detail.data
+  const firstMaterialId = course?.modules.flatMap((module) => module.materials).find((material) => !material.completed)?.id
+    ?? course?.modules.flatMap((module) => module.materials)[0]?.id
+
+  // Waktu belajar: satu sinyal per menit selama halaman materi terbuka (aturan 2 Nov 2026).
+  useEffect(() => {
+    if (!firstMaterialId) return
+    const timer = window.setInterval(() => {
+      recordStudyMinute(firstMaterialId).catch(() => undefined)
+    }, 60_000)
+
+    return () => window.clearInterval(timer)
+  }, [firstMaterialId])
+
+  const finishModule = async (module: ModuleRow) => {
+    const pending = module.materials.filter((material) => !material.completed)
+    if (pending.length === 0) {
+      setNotice('Modul ini sudah selesai.')
+      return
+    }
+
+    setBusyId(module.id)
+    setNotice(null)
+    try {
+      let xp = 0
+      for (const material of pending) {
+        const result = await completeMaterial(material.id)
+        xp += result.xp_awarded
+      }
+      setNotice(xp > 0 ? `Modul selesai. Anda mendapat ${xp} XP.` : 'Modul selesai.')
+      detail.reload()
+    } catch {
+      setNotice('Progres gagal disimpan. Coba lagi.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (detail.loading && !course) {
+    return (
+      <>
+        <BackLink />
+        <Spinner label="Memuat materi…" />
+      </>
+    )
+  }
+
+  if (detail.error) {
     return (
       <>
         <BackLink />
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white">
-          <EmptyState title="Materi tidak ditemukan" description="Kursus yang Anda buka tidak tersedia." />
+          {detail.error.kind === 'not_found' ? (
+            <EmptyState title="Materi tidak ditemukan" description="Kursus yang Anda buka tidak tersedia." />
+          ) : (
+            <ErrorState error={detail.error} onRetry={detail.reload} />
+          )}
         </div>
       </>
     )
   }
 
+  if (!course) return null
+
   const isLembaga = course.source === 'lembaga'
-  // Program Lembaga yang belum dibeli hanya bisa dilihat daftar modulnya.
-  const locked = isLembaga && !course.purchased
-  const progress = course.progress ?? 0
+  const locked = false // Program Lembaga yang belum dibeli tidak muncul di daftar (belum ada alur pembelian).
+  const progress = course.progress
+  const rows = toRows(course.modules)
 
   return (
     <>
@@ -45,7 +138,7 @@ export default function SiswaMateriDetail() {
             <BackLink light />
             <span className="mt-4 block w-fit rounded-md bg-white/20 px-3.5 py-1.5 text-xs font-semibold">Materi</span>
             <h1 className="mt-3 text-5xl font-extrabold">{course.title}</h1>
-            <p className="mt-1 text-2xl">{course.tagline}</p>
+            <p className="mt-1 text-2xl">{course.description ?? ''}</p>
             <div className="mt-8 flex flex-wrap items-center gap-x-12 gap-y-2 text-xl">
               <span className="flex items-center gap-3">
                 <User className="h-6 w-6" aria-hidden />
@@ -53,7 +146,8 @@ export default function SiswaMateriDetail() {
               </span>
               <span className="flex items-center gap-2">
                 <Star className="h-6 w-6 fill-current" aria-hidden />
-                {course.rating.toFixed(1)}/5.0
+                {/* Ulasan belum tersedia dari API: tampilkan keadaan kosong, bukan angka contoh. */}
+                Belum ada ulasan
               </span>
             </div>
           </div>
@@ -61,7 +155,6 @@ export default function SiswaMateriDetail() {
           {locked ? (
             <div className="flex items-center gap-2">
               <BalloonIllustration />
-              {/* Alur "Bayar (simulasi)" dihubungkan saat modul pembayaran dibuat. */}
               <button type="button" className="rounded-2xl bg-white px-6 py-6 font-extrabold text-red-600 hover:bg-red-50">
                 BELI MODUL INI SEKARANG &nbsp;&gt;
               </button>
@@ -91,10 +184,19 @@ export default function SiswaMateriDetail() {
         <span className="inline-block border-b-[3px] border-blue-600 px-7 pb-1 text-2xl text-blue-600">Materi</span>
       </div>
 
+      {notice && (
+        <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-700" role="status">
+          {notice}
+        </p>
+      )}
+
       <ul className="mt-6">
-        {course.modules.map((module) => (
-          <ModuleRow key={module.id} module={module} locked={locked} />
+        {rows.map((module) => (
+          <ModuleRow key={module.id} module={module} locked={locked} busy={busyId === module.id} onComplete={() => finishModule(module)} />
         ))}
+        {rows.length === 0 && (
+          <li className="border-b border-slate-200 px-5 py-6 text-center text-slate-500">Belum ada modul pada kursus ini.</li>
+        )}
       </ul>
 
       <section className="mt-24 px-2 sm:px-8">
@@ -104,14 +206,14 @@ export default function SiswaMateriDetail() {
             <BookOpen className="h-5 w-5" aria-hidden />
           </span>
           <span className="flex-1 text-slate-900">Total Modul</span>
-          <span className="text-3xl font-semibold text-slate-900">{course.modules.length}</span>
+          <span className="text-3xl font-semibold text-slate-900">{course.modules_total}</span>
         </div>
         <div className="mt-6 flex items-center gap-6 rounded-xl border border-slate-200 bg-white px-4 py-3">
           <span className="flex h-11 w-11 items-center justify-center text-amber-500">
             <Zap className="h-8 w-8 fill-current" aria-hidden />
           </span>
           <span className="flex-1 text-slate-900">Total XP</span>
-          <span className="text-3xl font-semibold text-slate-900">{course.totalXp} XP</span>
+          <span className="text-3xl font-semibold text-slate-900">{course.total_xp} XP</span>
         </div>
       </section>
     </>
@@ -130,9 +232,20 @@ function BackLink({ light = false }: { light?: boolean }) {
   )
 }
 
-function ModuleRow({ module, locked }: { module: CourseModule; locked: boolean }) {
+function ModuleRow({
+  module,
+  locked,
+  busy,
+  onComplete,
+}: {
+  module: ModuleRow
+  locked: boolean
+  busy: boolean
+  onComplete: () => void
+}) {
   const type = MODULE_TYPE[module.type]
   const status = STATUS_ICON[module.status]
+  const linkable = module.materials.find((material) => material.has_file || material.external_url)
 
   return (
     <li className="flex items-center gap-5 border-b border-slate-200 px-5 py-3 last:border-b-0">
@@ -146,15 +259,29 @@ function ModuleRow({ module, locked }: { module: CourseModule; locked: boolean }
           {type.label}
         </p>
       </div>
-      {/* Tombol belum terhubung ke halaman baca materi. */}
+      {!locked && linkable && (
+        <a
+          href={linkable.has_file ? studentMaterialFileUrl(linkable.id) : linkable.external_url ?? '#'}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-md bg-slate-200 px-5 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-300"
+        >
+          Buka materi
+        </a>
+      )}
       {!locked && module.status === 'done' && (
-        <button type="button" className="rounded-md bg-slate-200 px-5 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-300">
-          Ulas
+        <button type="button" onClick={onComplete} className="rounded-md bg-slate-200 px-5 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-300">
+          {busy ? 'Menyimpan…' : 'Ulas'}
         </button>
       )}
       {!locked && module.status === 'current' && (
-        <button type="button" className="rounded-md bg-blue-600 px-5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
-          Mulai
+        <button
+          type="button"
+          onClick={onComplete}
+          disabled={busy}
+          className="rounded-md bg-blue-600 px-5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+        >
+          {busy ? 'Menyimpan…' : 'Mulai'}
         </button>
       )}
     </li>

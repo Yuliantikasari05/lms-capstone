@@ -28,6 +28,13 @@ class RolePermissionSeeder extends Seeder
         'assignments.manage' => 'Membuat dan mengubah tugas, kuis, dan ujian',
         'assignments.grade' => 'Menilai pengumpulan tugas peserta',
         'assignments.review' => 'Menyetujui atau menolak ujian buatan Mentor',
+        'learning.view' => 'Melihat kelas dan materi yang diikuti (Siswa)',
+        'learning.progress' => 'Menandai materi selesai dan mencatat waktu belajar (Siswa)',
+        'assignments.submit' => 'Mengerjakan dan mengumpulkan tugas, kuis, serta ujian (Siswa)',
+        'schedule.view' => 'Melihat jadwal bimbingan dan tenggat tugas (Siswa)',
+        'schedule.join' => 'Bergabung ke sesi bimbingan dan mencatat kehadiran (Siswa)',
+        'reports.view' => 'Melihat laporan belajar sendiri (Siswa)',
+        'leaderboard.view' => 'Melihat papan peringkat Siswa',
         'coupons.view' => 'Melihat daftar kupon',
         'coupons.create' => 'Membuat kupon',
         'coupons.update' => 'Mengubah kupon',
@@ -68,7 +75,9 @@ class RolePermissionSeeder extends Seeder
         // Mentor: mengelola kursus yang diampu sendiri (kepemilikan tetap ditegakkan CoursePolicy).
         Role::MENTOR => ['dashboard.mentor', 'courses.view', 'courses.create', 'courses.update', 'content.manage',
             'assignments.view', 'assignments.manage', 'assignments.grade'],
-        Role::SISWA => ['dashboard.siswa'],
+        // Siswa: seluruh fitur belajar yang hanya mengakses data miliknya sendiri (enrollment aktif).
+        Role::SISWA => ['dashboard.siswa', 'learning.view', 'learning.progress', 'assignments.submit',
+            'schedule.view', 'schedule.join', 'reports.view', 'leaderboard.view'],
         Role::KARYAWAN => ['dashboard.karyawan'],
         Role::LEMBAGA => ['dashboard.lembaga'],
     ];

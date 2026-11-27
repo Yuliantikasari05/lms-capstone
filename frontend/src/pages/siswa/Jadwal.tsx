@@ -1,10 +1,38 @@
-import { ArrowLeft, BookOpen, CalendarDays, ChevronLeft, ChevronRight, FileText, Target, Video, type LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowLeft, BookOpen, CalendarDays, ChevronLeft, ChevronRight, FileText, Loader2, MapPin, Target, Video, type LucideIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { SCHEDULE, type ScheduleItem, type ScheduleType } from './jadwalData'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { Button } from '../../components/ui/Button'
+import { Modal } from '../../components/ui/Modal'
+import { formatDate } from '../../lib/format'
+import { useApiData } from '../../lib/useApiData'
 import { TASK_STATUS, subjectColor, subjectTextColor, timeFormat } from './shared'
+import { apiErrorMessage } from './apiErrorMessage'
+import {
+  fetchStudentSchedule,
+  joinStudentSession,
+  type StudentSchedule,
+  type StudentScheduleAssignment,
+  type StudentSession,
+} from './studentApi'
 
-type Filter = 'all' | ScheduleType
+type Filter = 'all' | 'bimbingan' | 'materi' | 'tugas'
+type ScheduleType = 'bimbingan' | 'tugas' | 'materi'
+
+interface ScheduleItem {
+  id: string
+  type: ScheduleType
+  label: string
+  title: string
+  subtitle: string
+  subject: string
+  start: string
+  end?: string
+  status?: keyof typeof TASK_STATUS
+  live?: boolean
+  session?: StudentSession
+  assignment?: StudentScheduleAssignment
+}
 
 const FILTERS: { key: Filter; label: string; Icon: LucideIcon; iconClass: string }[] = [
   { key: 'all', label: 'Semua', Icon: CalendarDays, iconClass: 'text-slate-700' },
@@ -26,20 +54,55 @@ function itemColors(item: ScheduleItem): { box: string; label: string } {
   return { box: subjectColor(item.subject), label: subjectTextColor(item.subject) }
 }
 
+/** Response API jadwal → baris jadwal yang dipakai tampilan. */
+function buildItems(data: StudentSchedule): ScheduleItem[] {
+  const sessions: ScheduleItem[] = data.sessions.map((session) => ({
+    id: `session-${session.id}`,
+    type: 'bimbingan',
+    label: 'Sesi Bimbingan',
+    title: session.course_title ?? session.title,
+    subtitle: session.mentor_name ?? session.title,
+    subject: session.course_title ?? 'Sesi',
+    start: session.starts_at,
+    end: session.ends_at ?? undefined,
+    live: session.can_join,
+    session,
+  }))
+
+  const assignments: ScheduleItem[] = data.assignments.map((assignment) => ({
+    id: `assignment-${assignment.id}`,
+    type: 'tugas',
+    label: assignment.kind_label,
+    title: assignment.title,
+    subtitle: assignment.course_title ?? '',
+    subject: assignment.course_title ?? 'Tugas',
+    start: assignment.due_at,
+    status: assignment.submission.status,
+    assignment,
+  }))
+
+  return [...sessions, ...assignments]
+}
+
 const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 const fullDateFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const weekdayFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long' })
 const dayMonthFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' })
 const monthFormat = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' })
 
+type Selected = { kind: 'session'; session: StudentSession } | { kind: 'assignment'; assignment: StudentScheduleAssignment } | null
+
 export default function SiswaJadwal() {
   const [filter, setFilter] = useState<Filter>('all')
+  const [selected, setSelected] = useState<Selected>(null)
+  const schedule = useApiData(fetchStudentSchedule, [])
 
+  const items = useMemo(() => (schedule.data ? buildItems(schedule.data) : []), [schedule.data])
   const today = new Date()
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
-  const items = SCHEDULE.filter((item) => filter === 'all' || item.type === filter).sort((a, b) => a.start.localeCompare(b.start))
-  const todayItems = items.filter((item) => dayKey(new Date(item.start)) === dayKey(today))
-  const upcomingItems = items.filter((item) => new Date(item.start) >= tomorrow)
+  const visible = items.filter((item) => filter === 'all' || item.type === filter).sort((a, b) => a.start.localeCompare(b.start))
+  const todayItems = visible.filter((item) => dayKey(new Date(item.start)) === dayKey(today))
+  const upcomingItems = visible.filter((item) => new Date(item.start) >= tomorrow)
 
   return (
     <>
@@ -50,47 +113,54 @@ export default function SiswaJadwal() {
       <h1 className="mt-4 text-5xl font-bold text-slate-900">Jadwal</h1>
       <p className="mt-2 text-slate-800">Kelola jadwal belajar dan jangan lewatkan kelasmu</p>
 
-      <div className="mt-10 grid gap-12 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-x-6 gap-y-3" role="group" aria-label="Filter jadwal">
-            {FILTERS.map(({ key, label, Icon, iconClass }) => {
-              const active = filter === key
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setFilter(key)}
-                  aria-pressed={active}
-                  className={`flex items-center gap-3 rounded-2xl px-6 py-3 text-lg transition-colors ${
-                    active ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-md ${active ? 'text-white' : iconClass}`}>
-                    <Icon className="h-4 w-4" aria-hidden />
-                  </span>
-                  {label}
-                </button>
-              )
-            })}
+      {schedule.loading && !schedule.data && <Spinner label="Memuat jadwal…" />}
+      {schedule.error && <ErrorState error={schedule.error} onRetry={schedule.reload} />}
+
+      {schedule.data && (
+        <div className="mt-10 grid gap-12 xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap gap-x-6 gap-y-3" role="group" aria-label="Filter jadwal">
+              {FILTERS.map(({ key, label, Icon, iconClass }) => {
+                const active = filter === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFilter(key)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-3 rounded-2xl px-6 py-3 text-lg transition-colors ${
+                      active ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-md ${active ? 'text-white' : iconClass}`}>
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </span>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <h2 className="mt-6 flex flex-wrap gap-x-6 text-lg">
+              <span className="font-semibold text-slate-900">Jadwal Hari Ini</span>
+              <span className="text-blue-600">{fullDateFormat.format(today)}</span>
+            </h2>
+            <ScheduleList items={todayItems} upcoming={false} onSelect={setSelected} />
+
+            <h2 className="mt-8 text-lg font-semibold text-slate-900">Jadwal Mendatang</h2>
+            <ScheduleList items={upcomingItems} upcoming onSelect={setSelected} />
           </div>
 
-          <h2 className="mt-6 flex flex-wrap gap-x-6 text-lg">
-            <span className="font-semibold text-slate-900">Jadwal Hari Ini</span>
-            <span className="text-blue-600">{fullDateFormat.format(today)}</span>
-          </h2>
-          <ScheduleList items={todayItems} upcoming={false} />
-
-          <h2 className="mt-8 text-lg font-semibold text-slate-900">Jadwal Mendatang</h2>
-          <ScheduleList items={upcomingItems} upcoming />
+          <Calendar today={today} items={items} />
         </div>
+      )}
 
-        <Calendar today={today} />
-      </div>
+      {selected && <ScheduleDialog selected={selected} onClose={() => setSelected(null)} onJoined={() => schedule.reload()} />}
     </>
   )
 }
 
-function ScheduleList({ items, upcoming }: { items: ScheduleItem[]; upcoming: boolean }) {
+function ScheduleList({ items, upcoming, onSelect }: { items: ScheduleItem[]; upcoming: boolean; onSelect: (selected: Selected) => void }) {
   if (items.length === 0) {
     return <p className="mt-4 rounded-2xl border-2 border-slate-200 bg-white px-6 py-10 text-center text-slate-500">Tidak ada jadwal.</p>
   }
@@ -98,13 +168,13 @@ function ScheduleList({ items, upcoming }: { items: ScheduleItem[]; upcoming: bo
   return (
     <ul className="mt-4 divide-y divide-slate-200 rounded-2xl border-2 border-slate-200 bg-white px-6">
       {items.map((item) => (
-        <ScheduleRow key={item.id} item={item} upcoming={upcoming} />
+        <ScheduleRow key={item.id} item={item} upcoming={upcoming} onSelect={onSelect} />
       ))}
     </ul>
   )
 }
 
-function ScheduleRow({ item, upcoming }: { item: ScheduleItem; upcoming: boolean }) {
+function ScheduleRow({ item, upcoming, onSelect }: { item: ScheduleItem; upcoming: boolean; onSelect: (selected: Selected) => void }) {
   const { Icon } = TYPE_STYLE[item.type]
   const colors = itemColors(item)
   const start = new Date(item.start)
@@ -156,9 +226,9 @@ function ScheduleRow({ item, upcoming }: { item: ScheduleItem; upcoming: boolean
         <div className="hidden md:block" />
       )}
 
-      {/* Tombol belum terhubung ke halaman detail. */}
       <button
         type="button"
+        onClick={() => onSelect(item.session ? { kind: 'session', session: item.session } : item.assignment ? { kind: 'assignment', assignment: item.assignment } : null)}
         className="col-start-[-2] flex w-28 items-center justify-between justify-self-start rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 hover:border-slate-400 md:col-start-auto md:justify-self-end"
       >
         Lihat Detail
@@ -169,7 +239,7 @@ function ScheduleRow({ item, upcoming }: { item: ScheduleItem; upcoming: boolean
 }
 
 /** Kalender bulanan (Senin di kolom pertama) dengan titik warna untuk hari yang punya jadwal. */
-function Calendar({ today }: { today: Date }) {
+function Calendar({ today, items }: { today: Date; items: ScheduleItem[] }) {
   const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
 
   const year = month.getFullYear()
@@ -180,7 +250,7 @@ function Calendar({ today }: { today: Date }) {
   const cells = Array.from({ length: cellCount }, (_, index) => new Date(year, monthIndex, index - leading + 1))
 
   const typesByDay = new Map<string, Set<ScheduleType>>()
-  for (const item of SCHEDULE) {
+  for (const item of items) {
     const key = dayKey(new Date(item.start))
     typesByDay.set(key, (typesByDay.get(key) ?? new Set()).add(item.type))
   }
@@ -239,5 +309,87 @@ function Calendar({ today }: { today: Date }) {
         ))}
       </div>
     </section>
+  )
+}
+
+/** Detail sesi/tugas. "Gabung sesi" mencatat kehadiran lalu membuka tautan meeting (sesi online). */
+function ScheduleDialog({ selected, onClose, onJoined }: { selected: NonNullable<Selected>; onClose: () => void; onJoined: () => void }) {
+  const [joining, setJoining] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const session = selected.kind === 'session' ? selected.session : null
+  const assignment = selected.kind === 'assignment' ? selected.assignment : null
+
+  const join = async () => {
+    if (!session) return
+    setJoining(true)
+    setError(null)
+    try {
+      const result = await joinStudentSession(session.id)
+      setNotice(result.meeting_url ? 'Kehadiran tercatat. Membuka tautan meeting…' : `Kehadiran tercatat. Lokasi: ${result.location ?? '-'}`)
+      onJoined()
+      if (result.meeting_url) window.open(result.meeting_url, '_blank', 'noopener')
+      else if (result.location) window.open(`https://www.google.com/maps/search/${encodeURIComponent(result.location)}`, '_blank', 'noopener')
+    } catch (err) {
+      setError(apiErrorMessage(err))
+    } finally {
+      setJoining(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title={session ? session.title : assignment?.title ?? 'Detail'}
+      description={session ? `${session.course_title ?? ''} · ${session.mentor_name ?? ''}` : assignment?.kind_label}
+      onClose={onClose}
+      size="md"
+      footer={
+        session && session.can_join ? (
+          <Button onClick={join} disabled={joining}>
+            {joining ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />Mencatat…</> : 'Gabung sesi'}
+          </Button>
+        ) : assignment ? (
+          <Link to="/siswa/assignments" className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+            Buka Tugas
+          </Link>
+        ) : (
+          <Button variant="secondary" onClick={onClose}>Tutup</Button>
+        )
+      }
+    >
+      {session && (
+        <div className="space-y-3 text-sm text-slate-700">
+          <p className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-slate-400" aria-hidden />
+            {formatDate(session.starts_at)} · {timeFormat.format(new Date(session.starts_at))}
+            {session.ends_at && ` - ${timeFormat.format(new Date(session.ends_at))}`}
+          </p>
+          <p className="flex items-center gap-2">
+            {session.mode === 'offline' ? <MapPin className="h-4 w-4 text-slate-400" aria-hidden /> : <Video className="h-4 w-4 text-slate-400" aria-hidden />}
+            {session.mode === 'offline' ? session.location ?? 'Sesi tatap muka' : 'Sesi online'}
+          </p>
+          {session.description && <p>{session.description}</p>}
+          {session.joined && <p className="text-emerald-600">Kehadiran Anda sudah tercatat.</p>}
+          {!session.can_join && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              Tombol gabung aktif 15 menit sebelum sesi dimulai sampai sesi selesai.
+            </p>
+          )}
+        </div>
+      )}
+
+      {assignment && (
+        <div className="space-y-3 text-sm text-slate-700">
+          <p>Tenggat: {formatDate(assignment.due_at)} · {timeFormat.format(new Date(assignment.due_at))}</p>
+          <p>Status: {TASK_STATUS[assignment.submission.status].label}</p>
+          {assignment.submission.score !== null && <p>Nilai: {assignment.submission.score}</p>}
+        </div>
+      )}
+
+      {notice && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{notice}</p>}
+      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>}
+    </Modal>
   )
 }

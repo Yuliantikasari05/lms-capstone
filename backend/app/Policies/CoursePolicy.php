@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\Course;
+use App\Models\Enrollment;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
@@ -27,10 +28,24 @@ class CoursePolicy
         return $actor->hasPermission('courses.view') && $this->canSee($actor, $course);
     }
 
-    /** Melihat isi kursus (modul, materi, unduh file). Aturan peserta ditambahkan di tahap 2b. */
+    /**
+     * Melihat isi kursus (modul, materi, unduh file). Peserta (Siswa/Karyawan) yang terdaftar
+     * aktif pada kursus AKTIF boleh membaca isinya, walau tidak punya izin pengelolaan konten.
+     */
     public function viewContent(User $actor, Course $course): bool
     {
-        return $this->view($actor, $course);
+        if ($this->view($actor, $course)) {
+            return true;
+        }
+
+        if (! $actor->hasRole([Role::SISWA, Role::KARYAWAN]) || $course->status !== Course::STATUS_ACTIVE) {
+            return false;
+        }
+
+        return $course->enrollments()
+            ->where('user_id', $actor->id)
+            ->where('status', Enrollment::STATUS_ACTIVE)
+            ->exists();
     }
 
     public function create(User $actor): bool

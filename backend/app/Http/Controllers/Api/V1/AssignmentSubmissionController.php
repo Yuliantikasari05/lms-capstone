@@ -8,7 +8,9 @@ use App\Http\Resources\AssignmentSubmissionResource;
 use App\Models\Assignment;
 use App\Models\AssignmentSubmission;
 use App\Models\AuditLog;
+use App\Notifications\LearningNotification;
 use Illuminate\Http\Request;
+use App\Services\XpService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -37,7 +39,7 @@ class AssignmentSubmissionController extends Controller
     }
 
     /** Menyimpan nilai dan feedback. */
-    public function grade(GradeSubmissionRequest $request, AssignmentSubmission $submission): AssignmentSubmissionResource
+    public function grade(GradeSubmissionRequest $request, AssignmentSubmission $submission, XpService $xp): AssignmentSubmissionResource
     {
         $validated = $request->validated();
 
@@ -61,6 +63,28 @@ class AssignmentSubmissionController extends Controller
                 'score' => $submission->score,
             ], $request);
         });
+
+        // XP ujian baru diberikan setelah dinilai (tugas/kuis sudah diberi saat pengumpulan).
+        $assignment = $submission->assignment;
+        if ($assignment !== null
+            && $assignment->kind === Assignment::KIND_EXAM
+            && $assignment->xp_points > 0
+            && $submission->user !== null) {
+            $xp->award($submission->user, (int) $assignment->xp_points, XpService::SOURCE_EXAM, $assignment->id, 'Ujian dinilai: '.$assignment->title);
+        }
+
+        // Beri tahu peserta bahwa hasilnya sudah dinilai (notifikasi dalam aplikasi).
+        if ($assignment !== null && $submission->user !== null) {
+            $submission->user->notify(new LearningNotification(
+                LearningNotification::CATEGORY_ASSESSMENT,
+                'Tugas sudah dinilai: '.$assignment->title,
+                'Nilaimu '.$submission->score.' untuk '.$assignment->title.'. Buka detail tugas untuk membaca feedback Mentor.',
+                $request->user()->name,
+                $request->user()->roles->first()?->name ?? 'Mentor',
+                'Lihat nilai',
+                '/siswa/assignments',
+            ));
+        }
 
         return new AssignmentSubmissionResource($submission->load(['assignment.course', 'user', 'answers.question']));
     }
