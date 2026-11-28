@@ -46,6 +46,16 @@ class RolePermissionSeeder extends Seeder
         'institutions.update' => 'Mengubah profil, bagi hasil, rekening, dan status Lembaga Bimbingan',
         'institutions.delete' => 'Menghapus dan memulihkan Lembaga Bimbingan',
         'institutions.payout' => 'Mengajukan dan memproses pencairan dana Lembaga Bimbingan',
+        'lembaga.students.view' => 'Melihat siswa yang mengikuti program lembaga sendiri',
+        'lembaga.vouchers.view' => 'Melihat voucher promosi milik lembaga sendiri',
+        'lembaga.vouchers.create' => 'Membuat voucher promosi lembaga sendiri',
+        'lembaga.vouchers.update' => 'Mengubah voucher promosi lembaga sendiri',
+        'lembaga.vouchers.delete' => 'Menghapus voucher promosi lembaga sendiri',
+        'lembaga.pricing.view' => 'Melihat harga program lembaga sendiri',
+        'lembaga.pricing.update' => 'Mengatur harga program lembaga sendiri',
+        'lembaga.profile.view' => 'Melihat profil lembaga sendiri',
+        'lembaga.profile.update' => 'Memperbarui profil lembaga sendiri',
+        'lembaga.report.view' => 'Melihat laporan pendapatan dan pendaftar program lembaga sendiri',
         'roles.manage' => 'Mengatur role dan hak akses (Pengaturan)',
         'roles.view' => 'Melihat daftar role',
         'dashboard.admin' => 'Mengakses dashboard Admin',
@@ -79,7 +89,10 @@ class RolePermissionSeeder extends Seeder
         Role::SISWA => ['dashboard.siswa', 'learning.view', 'learning.progress', 'assignments.submit',
             'schedule.view', 'schedule.join', 'reports.view', 'leaderboard.view'],
         Role::KARYAWAN => ['dashboard.karyawan'],
-        Role::LEMBAGA => ['dashboard.lembaga'],
+        // Lembaga: membangun dan mengelola program pembelajaran opsional miliknya sendiri.
+        Role::LEMBAGA => ['dashboard.lembaga', 'courses.view', 'courses.create', 'courses.update', 'content.manage',
+            'lembaga.students.view', 'lembaga.vouchers.view', 'lembaga.vouchers.create', 'lembaga.vouchers.update', 'lembaga.vouchers.delete',
+            'lembaga.pricing.view', 'lembaga.pricing.update', 'lembaga.profile.view', 'lembaga.profile.update', 'lembaga.report.view'],
     ];
 
     /**

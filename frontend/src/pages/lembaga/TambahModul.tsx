@@ -14,11 +14,13 @@ import {
   X,
 } from 'lucide-react'
 import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
+import { toApiError } from '../../lib/api'
 import { LembagaPageHeader } from './LembagaPageHeader'
+import { createMaterial, createModule, createProgram } from './api'
 
 type MaterialType = 'video' | 'pdf' | 'file'
 
@@ -40,6 +42,13 @@ interface UploadedFile {
   file: File
 }
 
+/** Jenis materi mengikuti isi berkas: PDF, video, atau dokumen lain. */
+function materialTypeForFile(file: File): 'pdf' | 'video' | 'document' {
+  const extension = file.name.split('.').pop()?.toLowerCase()
+
+  return extension === 'pdf' ? 'pdf' : extension === 'mp4' || extension === 'webm' ? 'video' : 'document'
+}
+
 const INITIAL_CHAPTERS: Chapter[] = [
   {
     id: 1,
@@ -55,6 +64,8 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024
 const ACCEPTED_EXTENSIONS = ['pdf', 'ppt', 'pptx', 'mp4']
 
 export default function TambahModul() {
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [moduleName, setModuleName] = useState('')
   const [category, setCategory] = useState('')
@@ -167,9 +178,68 @@ export default function TambahModul() {
     setMaterialDialogOpen(false)
   }
 
-  function saveModule(event: FormEvent<HTMLFormElement>) {
+  async function saveModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setFormMessage(`Modul "${moduleName.trim()}" berhasil disimpan dalam pratinjau. Data belum dikirim ke server.`)
+    const title = moduleName.trim()
+    if (!title || busy) return
+
+    setBusy(true)
+    setFormMessage('')
+
+    try {
+      const program = await createProgram({
+        title,
+        description: description.trim() || null,
+        category: category || null,
+        status: 'draft',
+      })
+
+      // Bab = modul kursus; materi tanpa berkas/tautan tidak dapat disimpan dan dilaporkan ke pengguna.
+      const moduleIds: number[] = []
+      for (const chapter of chapters) {
+        const created = await createModule(program.id, chapter.title)
+        moduleIds.push(created.id)
+      }
+
+      let savedMaterials = 0
+      let skippedMaterials = 0
+
+      for (const chapter of chapters) {
+        const moduleId = moduleIds[chapters.indexOf(chapter)]
+        for (const material of chapter.materials) {
+          if (/^https?:\/\//i.test(material.detail)) {
+            await createMaterial(moduleId, { title: material.title, type: 'link', externalUrl: material.detail })
+            savedMaterials += 1
+          } else {
+            skippedMaterials += 1
+          }
+        }
+      }
+
+      if (moduleIds.length > 0) {
+        for (const upload of uploadedFiles) {
+          await createMaterial(moduleIds[0], {
+            title: upload.file.name,
+            type: materialTypeForFile(upload.file),
+            file: upload.file,
+          })
+          savedMaterials += 1
+        }
+      }
+
+      const skippedNote = skippedMaterials > 0 || (uploadedFiles.length > 0 && moduleIds.length === 0)
+        ? ' Materi tanpa berkas atau tautan belum disimpan; bagikan berkasnya lewat halaman modul.'
+        : ''
+
+      setFormMessage(
+        `Program "${title}" berhasil disimpan sebagai draf bersama ${moduleIds.length} bab dan ${savedMaterials} materi.${skippedNote}`,
+      )
+      navigate('/lembaga/modules')
+    } catch (error) {
+      setFormMessage(toApiError(error).message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -425,11 +495,12 @@ export default function TambahModul() {
           </Link>
           <Button
             type="submit"
+            disabled={busy}
             icon={<Check className="h-4 w-4" aria-hidden />}
             className="px-4 py-2 text-sm"
             onClick={() => setFormMessage('')}
           >
-            Simpan Modul
+            {busy ? 'Menyimpan…' : 'Simpan Modul'}
           </Button>
         </div>
       </form>
@@ -549,7 +620,7 @@ export default function TambahModul() {
         description="Ringkasan laporan belum tersedia di pratinjau statis."
         onClose={() => setReportOpen(false)}
       >
-        <p className="text-sm leading-6 text-slate-600">Data laporan akan tersedia setelah terhubung ke backend.</p>
+        <p className="text-sm leading-6 text-slate-600">Laporan pendapatan dan enrollment tersedia di halaman Jelajahi.</p>
       </Modal>
     </div>
   )

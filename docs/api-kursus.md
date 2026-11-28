@@ -94,10 +94,27 @@ Aturan sesi:
 |---|---|---|
 | GET | `/mentor/summary` | Kursus yang diampu pengguna ini beserta jumlah modul/sesi/peserta; `students_total`, `students_active`, `new_students_this_month`, `upcoming_sessions_total`, `upcoming_sessions` (5 terdekat). Semua angka dari database. Butuh `courses.view`. |
 
+### Forum diskusi kursus
+
+Satu forum per kursus, terbuka untuk semua yang boleh melihat isi kursus (peserta terdaftar, Mentor pengampu, Lembaga pemilik program, Admin). Penulis boleh mengubah/menghapus tulisannya sendiri; Mentor, Lembaga, dan Admin boleh menghapus semua diskusi/balasan (`CourseDiscussionPolicy`, sesuai aturan balasan diskusi 5 Nov 2026).
+
+| Metode | Path | Keterangan |
+|---|---|---|
+| GET | `/courses/{id}/discussions` | Daftar topik terbaru (`per_page` 20, maks 50) beserta `replies_count`, `views`, `is_own`, `can_update`, `can_delete` |
+| POST | `/courses/{id}/discussions` | `title` (maks 150), `body` (maks 5000) |
+| GET | `/discussions/{id}` | Detail topik + seluruh balasan; menambah penghitung `views` |
+| PATCH | `/discussions/{id}` | `title`, `body` (penulis atau pengelola isi kursus) |
+| DELETE | `/discussions/{id}` | Ikut menghapus seluruh balasan |
+| POST | `/discussions/{id}/replies` | `body` |
+| PATCH | `/discussion-replies/{id}` | `body` (penulis atau pengelola isi kursus) |
+| DELETE | `/discussion-replies/{id}` | Penulis atau pengelola isi kursus |
+
+Setiap balasan baru mengirim notifikasi kategori `discussion` kepada penulis topik (bukan kepada pembalas itu sendiri, dan tidak untuk akun nonaktif/dihapus). Tautannya menuju forum sesuai role penerima: `/siswa/materials/{course}`, `/mentor/courses/{course}`, `/lembaga/modules`, atau `/admin/courses`.
+
 ## Audit
 
 Aksi yang dicatat di `/audit-logs`: `course.created`, `course.updated` (nilai sebelum/sesudah), `course.deleted`, `course.mentor_assigned`, serta aksi modul, materi, sesi, dan peserta. Kata sandi dan isi file tidak pernah dicatat.
 
 ## Yang belum ada (tahap berikutnya)
 
-Progres materi, tombol "Gabung sesi" dan kehadiran peserta (Tahap 2b); Program Lembaga (Tahap 4); XP dan leaderboard (Tahap 5); sertifikat (Tahap 6). Tugas, kuis, dan ujian sudah tersedia — lihat `docs/api-tugas.md`. Tab Diskusi menunggu keputusan cakupan forum.
+Progres materi, tombol "Gabung sesi" dan kehadiran peserta (Tahap 2b); Program Lembaga (Tahap 4); XP dan leaderboard (Tahap 5); sertifikat (Tahap 6). Tugas, kuis, dan ujian sudah tersedia — lihat `docs/api-tugas.md`. Forum diskusi kursus juga sudah tersedia (lihat bagian di atas).

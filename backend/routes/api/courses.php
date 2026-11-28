@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\V1\AssignmentController;
 use App\Http\Controllers\Api\V1\AssignmentSubmissionController;
 use App\Http\Controllers\Api\V1\ClassSessionController;
 use App\Http\Controllers\Api\V1\CourseController;
+use App\Http\Controllers\Api\V1\CourseDiscussionController;
+use App\Http\Controllers\Api\V1\CourseDiscussionReplyController;
 use App\Http\Controllers\Api\V1\CourseModuleController;
 use App\Http\Controllers\Api\V1\EnrollmentController;
 use App\Http\Controllers\Api\V1\MaterialController;
@@ -55,6 +57,17 @@ Route::get('sessions/{session}', [ClassSessionController::class, 'show']);
 Route::patch('sessions/{session}', [ClassSessionController::class, 'update']);
 Route::delete('sessions/{session}', [ClassSessionController::class, 'destroy']);
 Route::get('sessions/{session}/meeting-link', [ClassSessionController::class, 'meetingLink']);
+
+// Forum diskusi kursus. Peserta, Mentor, Lembaga pemilik program, dan Admin boleh membaca/menulis;
+// penulis atau pengelola isi kursus boleh mengubah/menghapus (CourseDiscussionPolicy).
+Route::get('courses/{course}/discussions', [CourseDiscussionController::class, 'index']);
+Route::post('courses/{course}/discussions', [CourseDiscussionController::class, 'store']);
+Route::get('discussions/{discussion}', [CourseDiscussionController::class, 'show']);
+Route::patch('discussions/{discussion}', [CourseDiscussionController::class, 'update']);
+Route::delete('discussions/{discussion}', [CourseDiscussionController::class, 'destroy']);
+Route::post('discussions/{discussion}/replies', [CourseDiscussionReplyController::class, 'store']);
+Route::patch('discussion-replies/{reply}', [CourseDiscussionReplyController::class, 'update']);
+Route::delete('discussion-replies/{reply}', [CourseDiscussionReplyController::class, 'destroy']);
 
 // Peserta kursus (didaftarkan Admin). "candidates" = pengguna yang layak didaftarkan (ditentukan server).
 Route::get('courses/{course}/enrollments', [EnrollmentController::class, 'index']);

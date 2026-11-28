@@ -38,6 +38,7 @@ const NOTIFICATION_VIEWS: Partial<Record<RoleSlug, { subtitle: string; allHref: 
   siswa: { subtitle: 'Nilai tugas, jadwal, dan pencapaian belajarmu.', allHref: '/siswa/notifications' },
   mentor: { subtitle: 'Pembaruan dari peserta dan admin.', allHref: '/mentor/notifications' },
   admin: { subtitle: 'Pembaruan pengguna, kursus, dan operasional platform.', allHref: '/admin/notifications' },
+  lembaga: { subtitle: 'Siswa program, voucher, dan pencairan dana lembaga.', allHref: '/lembaga/notifications' },
 }
 
 export function NotificationButton({ tone = 'light' }: { tone?: 'light' | 'dark' }) {

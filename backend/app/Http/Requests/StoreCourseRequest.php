@@ -9,6 +9,14 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+/**
+ * Membuat kursus baru.
+ *
+ * Admin membuat kursus akademik/pelatihan/webinar dan boleh menunjuk Mentor.
+ * Mentor membuat kursus untuk dirinya sendiri (otomatis menjadi pengampu).
+ * Lembaga hanya boleh membuat Program Lembaga (jenis "institution") miliknya; program lembaga
+ * tidak memakai Mentor dan boleh langsung aktif karena pembelajarannya opsional.
+ */
 class StoreCourseRequest extends FormRequest
 {
     public function authorize(): bool
@@ -21,13 +29,25 @@ class StoreCourseRequest extends FormRequest
         return $this->user()?->hasPermission('courses.assign_mentor') ?? false;
     }
 
+    private function isInstitution(): bool
+    {
+        return $this->user()?->hasRole(Role::LEMBAGA) ?? false;
+    }
+
+    /** @return array<int,string> */
+    private function allowedTypes(): array
+    {
+        return $this->isInstitution() ? [Course::TYPE_INSTITUTION] : Course::CREATABLE_TYPES;
+    }
+
     public function rules(): array
     {
         return [
-            'type' => ['required', Rule::in(Course::CREATABLE_TYPES)],
+            'type' => ['required', Rule::in($this->allowedTypes())],
             'title' => ['required', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:5000'],
-            // Kursus baru boleh langsung aktif bila sudah punya Mentor.
+            'category' => ['nullable', 'string', 'max:50'],
+            // Kursus baru boleh langsung aktif bila sudah punya Mentor (Program Lembaga tidak perlu Mentor).
             'status' => ['nullable', Rule::in([Course::STATUS_DRAFT, Course::STATUS_ACTIVE])],
             // Hanya yang berizin (Admin) yang menunjuk Mentor. Mentor yang membuat kursus otomatis menjadi pengampunya.
             'mentor_id' => $this->canAssignMentor() ? ['nullable', 'integer', new ActiveMentor] : ['prohibited'],
@@ -38,6 +58,10 @@ class StoreCourseRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator) {
+            if ($this->isInstitution()) {
+                return;
+            }
+
             $hasMentor = filled($this->input('mentor_id'))
                 || (! $this->canAssignMentor() && $this->user()?->hasRole(Role::MENTOR));
 
@@ -55,6 +79,7 @@ class StoreCourseRequest extends FormRequest
             'title.required' => 'Judul kursus wajib diisi.',
             'title.max' => 'Judul kursus maksimal 150 karakter.',
             'description.max' => 'Deskripsi maksimal 5000 karakter.',
+            'category.max' => 'Kategori maksimal 50 karakter.',
             'status.in' => 'Status awal hanya boleh Draf atau Aktif.',
             'mentor_id.prohibited' => 'Anda tidak dapat menunjuk Mentor. Kursus yang Anda buat otomatis Anda ampu.',
             'mentor_id.integer' => 'Mentor tidak valid.',

@@ -66,7 +66,7 @@ class CourseController extends Controller
         $actor = $request->user();
 
         $course = DB::transaction(function () use ($data, $actor, $request) {
-            $course = new Course(collect($data)->only(['type', 'title', 'description'])->all());
+            $course = new Course(collect($data)->only(['type', 'title', 'description', 'category'])->all());
             $course->status = $data['status'] ?? Course::STATUS_DRAFT;
             $course->created_by = $actor->id;
             $course->mentor_id = $actor->hasPermission('courses.assign_mentor')
@@ -82,6 +82,7 @@ class CourseController extends Controller
         });
 
         $this->notifyCourseCreatedByMentor($course, $actor);
+        $this->notifyProgramCreatedByInstitution($course, $actor);
 
         return (new CourseResource($this->withSummary($course)))
             ->additional(['message' => 'Kursus berhasil dibuat.'])
@@ -173,8 +174,7 @@ class CourseController extends Controller
     }
 
     /** Kursus yang dibuat Mentor perlu diketahui Admin pemegang izin lihat kursus. */
-    private function notifyCourseCreatedByMentor(Course $course, User $actor): void
-    {
+    private function notifyCourseCreatedByMentor(Course $course, User $actor): void    {
         if (! $actor->hasRole(Role::MENTOR)) {
             return;
         }
@@ -192,6 +192,29 @@ class CourseController extends Controller
             'Mentor',
             'Lihat kursus',
             '/admin/courses',
+        ));
+    }
+
+    /** Program baru milik Lembaga perlu diketahui Admin pengelola Lembaga Bimbingan. */
+    private function notifyProgramCreatedByInstitution(Course $course, User $actor): void
+    {
+        if (! $course->isInstitutionProgram() || ! $actor->hasRole(Role::LEMBAGA)) {
+            return;
+        }
+
+        $admins = NotificationRecipients::withPermission('institutions.view', $actor, [Role::ADMIN]);
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        Notification::send($admins, new LearningNotification(
+            LearningNotification::CATEGORY_SYSTEM,
+            'Program baru dari Lembaga: '.$course->title,
+            $actor->name.' menambahkan program pembelajaran opsional. Periksa profil lembaga dan bagi hasilnya.',
+            $actor->name,
+            'Lembaga Bimbingan',
+            'Lihat lembaga',
+            '/admin/institutions',
         ));
     }
 

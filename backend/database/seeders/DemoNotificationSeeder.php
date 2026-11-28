@@ -33,6 +33,7 @@ class DemoNotificationSeeder extends Seeder
 
         $student = $this->demoUser(DemoLearningSeeder::STUDENT);
         $mentor = $this->demoUser('rina.kusumawati');
+        $lembaga = $this->demoUser('prima.edukasi');
         $web = Course::query()->where('title', 'Dasar Pemrograman Web')->first();
         $excel = Course::query()->where('title', 'Excel untuk Karyawan')->first();
 
@@ -44,6 +45,11 @@ class DemoNotificationSeeder extends Seeder
 
         if ($mentor !== null && $mentor->hasRole(Role::MENTOR)) {
             $targets[] = [$mentor, $this->mentorItems($web, $excel)];
+        }
+
+        // Lembaga: isi lonceng mengikuti pekerjaannya (siswa program, voucher, pencairan dana).
+        if ($lembaga !== null && $lembaga->hasRole(Role::LEMBAGA)) {
+            $targets[] = [$lembaga, $this->lembagaItems()];
         }
 
         foreach (User::query()->whereHas('roles', fn ($query) => $query->where('slug', Role::ADMIN))->get() as $admin) {
@@ -222,6 +228,45 @@ class DemoNotificationSeeder extends Seeder
                 'actor_name' => 'Sistem', 'actor_role' => 'Sistem',
                 'action_label' => 'Buka dashboard', 'href' => '/admin',
                 'read_at' => now()->subDays(2), 'hours_ago' => 60,
+            ],
+        ];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function lembagaItems(): array
+    {
+        return [
+            [
+                'category' => LearningNotification::CATEGORY_ROSTER,
+                'title' => 'Peserta baru di English for TOEFL',
+                'message' => 'Ada siswa baru terdaftar pada program English for TOEFL. Periksa daftar siswa untuk memantau progresnya.',
+                'actor_name' => 'Sistem', 'actor_role' => 'Sistem',
+                'action_label' => 'Lihat siswa', 'href' => '/lembaga/students',
+                'read_at' => null, 'hours_ago' => 3,
+            ],
+            [
+                'category' => LearningNotification::CATEGORY_SYSTEM,
+                'title' => 'Voucher DEMOPRIMA15 hampir kedaluwarsa',
+                'message' => 'Voucher promo lembaga Anda akan berakhir dalam 30 hari. Perpanjang atau nonaktifkan bila tidak dipakai lagi.',
+                'actor_name' => 'Sistem', 'actor_role' => 'Sistem',
+                'action_label' => 'Kelola voucher', 'href' => '/lembaga/vouchers',
+                'read_at' => null, 'hours_ago' => 9,
+            ],
+            [
+                'category' => LearningNotification::CATEGORY_SYSTEM,
+                'title' => 'Pencairan dana selesai',
+                'message' => 'Pencairan dana lembaga sudah diproses Admin dan dikirim ke rekening terdaftar.',
+                'actor_name' => 'Admin LMS', 'actor_role' => 'Admin',
+                'action_label' => 'Lihat laporan', 'href' => '/lembaga/explore',
+                'read_at' => now()->subDay(), 'hours_ago' => 30,
+            ],
+            [
+                'category' => LearningNotification::CATEGORY_SYSTEM,
+                'title' => 'Harga program berhasil diperbarui',
+                'message' => 'Perubahan harga hanya berlaku untuk transaksi berikutnya; riwayat penjualan tidak berubah.',
+                'actor_name' => 'Sistem', 'actor_role' => 'Sistem',
+                'action_label' => 'Atur harga', 'href' => '/lembaga/explore',
+                'read_at' => now()->subDays(2), 'hours_ago' => 50,
             ],
         ];
     }

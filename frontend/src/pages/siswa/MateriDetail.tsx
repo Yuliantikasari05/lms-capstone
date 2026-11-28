@@ -2,6 +2,7 @@ import { ArrowLeft, BookOpen, Circle, CircleCheck, CirclePlay, FileText, Star, U
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { EmptyState, ErrorState, Spinner } from '../../components/ui/States'
+import { CourseDiscussions } from '../../features/discussions/CourseDiscussions'
 import { useApiData } from '../../lib/useApiData'
 import {
   completeMaterial,
@@ -215,6 +216,10 @@ export default function SiswaMateriDetail() {
           <span className="flex-1 text-slate-900">Total XP</span>
           <span className="text-3xl font-semibold text-slate-900">{course.total_xp} XP</span>
         </div>
+      </section>
+
+      <section className="mt-10 px-2 sm:px-8">
+        <CourseDiscussions courseId={Number(courseId)} />
       </section>
     </>
   )

@@ -256,11 +256,20 @@ class CourseFoundationTest extends TestCase
             $this->assertFalse($mentor->contains($slug), "Mentor tidak boleh punya {$slug}.");
         }
 
-        foreach ([Role::SISWA, Role::KARYAWAN, Role::LEMBAGA] as $role) {
+        foreach ([Role::SISWA, Role::KARYAWAN] as $role) {
             $permissions = Role::where('slug', $role)->firstOrFail()->permissions->pluck('slug');
             foreach ($slugs as $slug) {
                 $this->assertFalse($permissions->contains($slug), "{$role} belum boleh punya {$slug}.");
             }
+        }
+
+        // Lembaga membangun program pembelajaran opsional miliknya sendiri (tanpa hapus/mentor/peserta).
+        $lembaga = Role::where('slug', Role::LEMBAGA)->firstOrFail()->permissions->pluck('slug');
+        foreach (['courses.view', 'courses.create', 'courses.update', 'content.manage'] as $slug) {
+            $this->assertTrue($lembaga->contains($slug), "Lembaga harus punya {$slug}.");
+        }
+        foreach (['courses.delete', 'courses.assign_mentor', 'enrollments.manage'] as $slug) {
+            $this->assertFalse($lembaga->contains($slug), "Lembaga tidak boleh punya {$slug}.");
         }
     }
 
@@ -285,11 +294,14 @@ class CourseFoundationTest extends TestCase
         $this->assertTrue(Gate::forUser($admin)->allows('view', $program));
         $this->assertTrue(Gate::forUser($admin)->allows('viewContent', $program));
 
-        foreach (['update', 'delete', 'assignMentor', 'manageContent', 'manageEnrollments'] as $ability) {
+        foreach (['update', 'delete', 'assignMentor', 'manageContent'] as $ability) {
             $response = Gate::forUser($admin)->inspect($ability, $program);
             $this->assertFalse($response->allowed(), "Admin tidak boleh {$ability} pada Program Lembaga.");
             $this->assertSame('Program Lembaga hanya dapat diubah oleh lembaganya.', $response->message());
         }
+
+        // Peserta tetap dikelola Admin (pendaftaran/ pembatalan), termasuk pada Program Lembaga.
+        $this->assertTrue(Gate::forUser($admin)->allows('manageEnrollments', $program));
     }
 
     public function test_a_mentor_only_manages_own_courses_once_permissions_are_granted(): void

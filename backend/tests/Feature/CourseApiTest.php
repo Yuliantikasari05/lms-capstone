@@ -391,7 +391,8 @@ class CourseApiTest extends TestCase
 
     public static function nonAdminRoles(): array
     {
-        return [['siswa'], ['karyawan'], ['lembaga']];
+        // Lembaga punya izin kursus terbatas untuk programnya sendiri; diuji terpisah di LembagaApiTest.
+        return [['siswa'], ['karyawan']];
     }
 
     public function test_guests_are_rejected(): void

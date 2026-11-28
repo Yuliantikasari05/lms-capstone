@@ -75,10 +75,15 @@ class CoursePolicy
         return $this->allow($actor, $course, 'content.manage');
     }
 
-    /** Pendaftaran peserta (Admin). */
+    /**
+     * Pendaftaran peserta (Admin). Tidak dibatasi kepemilikan kursus: Admin mendaftarkan peserta
+     * ke kursus mana pun, termasuk Program Lembaga (peserta lalu melihatnya sebagai kelas opsional).
+     */
     public function manageEnrollments(User $actor, Course $course): Response
     {
-        return $this->allow($actor, $course, 'enrollments.manage');
+        return $actor->hasPermission('enrollments.manage')
+            ? Response::allow()
+            : Response::deny();
     }
 
     // ------------------------------------------------------------------ pembantu

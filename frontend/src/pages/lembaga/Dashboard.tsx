@@ -13,30 +13,18 @@ import {
   WalletCards,
   Clock3,
 } from 'lucide-react'
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
 import { LembagaPageHeader } from './LembagaPageHeader'
+import { createProgram, fetchSummary, type LembagaProgram } from './api'
 
 type ModuleTone = 'code' | 'design' | 'security' | 'business'
-
-interface LearningModule {
-  id: number
-  title: string
-  level: string
-  modules: number
-  sessions: number
-  tone: ModuleTone
-}
-
-const INITIAL_MODULES: LearningModule[] = [
-  { id: 1, title: 'Fullstack Web Developer', level: 'SMA/SMK', modules: 12, sessions: 24, tone: 'code' },
-  { id: 2, title: 'Desain Grafis Remaja', level: 'SMP', modules: 8, sessions: 16, tone: 'design' },
-  { id: 3, title: 'Cyber Security Fundamentals', level: 'SMA/UMUM', modules: 10, sessions: 20, tone: 'security' },
-  { id: 4, title: 'Digital Marketing Dasar', level: 'UMUM', modules: 6, sessions: 12, tone: 'business' },
-]
 
 const TONE_STYLES: Record<ModuleTone, { background: string; icon: typeof Code2; label: string }> = {
   code: { background: 'from-slate-800 via-cyan-900 to-slate-950', icon: Code2, label: 'Kode program' },
@@ -45,38 +33,44 @@ const TONE_STYLES: Record<ModuleTone, { background: string; icon: typeof Code2; 
   business: { background: 'from-emerald-900 via-teal-800 to-slate-950', icon: WalletCards, label: 'Bisnis digital' },
 }
 
+const TONES: ModuleTone[] = ['code', 'business', 'security', 'design']
+
+const currency = new Intl.NumberFormat('id-ID')
+
 export default function LembagaDashboard() {
   const navigate = useNavigate()
-  const [modules, setModules] = useState(INITIAL_MODULES)
+  const summary = useApiData(fetchSummary, [])
   const [moduleDialogOpen, setModuleDialogOpen] = useState(false)
   const [reportDialogOpen, setReportDialogOpen] = useState(false)
-  const [selectedModule, setSelectedModule] = useState<LearningModule | null>(null)
+  const [selectedModule, setSelectedModule] = useState<LembagaProgram | null>(null)
   const [moduleName, setModuleName] = useState('')
   const [moduleLevel, setModuleLevel] = useState('SMA/SMK')
   const [notice, setNotice] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const activeModules = modules.length
+  const cards = summary.data?.cards
+  const activeModules = cards?.active_programs ?? 0
   const moduleProgress = Math.min(activeModules, 10)
-  const visibleModules = useMemo(() => modules.slice(0, 3), [modules])
+  const visibleModules = (summary.data?.programs ?? []).slice(0, 3)
 
-  function createModule(event: FormEvent<HTMLFormElement>) {
+  async function createModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const title = moduleName.trim()
     if (!title) return
 
-    const newModule: LearningModule = {
-      id: Date.now(),
-      title,
-      level: moduleLevel,
-      modules: 0,
-      sessions: 0,
-      tone: 'business',
+    setSaving(true)
+    try {
+      await createProgram({ title, category: moduleLevel, status: 'draft' })
+      setModuleName('')
+      setModuleLevel('SMA/SMK')
+      setModuleDialogOpen(false)
+      setNotice(`Program "${title}" dibuat sebagai draf. Lengkapi kurikulum di Kelola Modul.`)
+      summary.reload()
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setSaving(false)
     }
-    setModules((current) => [newModule, ...current])
-    setModuleName('')
-    setModuleLevel('SMA/SMK')
-    setModuleDialogOpen(false)
-    setNotice(`Modul "${title}" ditambahkan ke pratinjau dashboard.`)
   }
 
   return (
@@ -95,6 +89,8 @@ export default function LembagaDashboard() {
         </div>
       )}
 
+      {summary.error && <ErrorState error={summary.error} onRetry={summary.reload} />}
+
       <section aria-label="Ringkasan lembaga" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard
           icon={<BookCopy className="h-5 w-5" aria-hidden />}
@@ -112,13 +108,13 @@ export default function LembagaDashboard() {
         />
         <SummaryCard
           icon={<Users className="h-5 w-5" aria-hidden />}
-          value="40"
+          value={cards?.total_students ?? 0}
           label="Total Siswa"
           tone="blue"
         />
         <SummaryCard
           icon={<CheckSquare className="h-5 w-5" aria-hidden />}
-          value="15"
+          value={cards?.total_enrollments ?? 0}
           label="Total Enrollments"
           tone="sand"
         />
@@ -164,25 +160,38 @@ export default function LembagaDashboard() {
             Lihat Semua <ArrowRight className="h-4 w-4" aria-hidden />
           </button>
         </div>
+        {summary.loading && !summary.data && <Spinner label="Memuat program…" />}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visibleModules.map((module) => (
-            <ModuleCard key={module.id} module={module} onClick={() => setSelectedModule(module)} />
+          {visibleModules.map((program, index) => (
+            <ModuleCard
+              key={program.id}
+              program={program}
+              tone={TONES[index % TONES.length]}
+              onClick={() => setSelectedModule(program)}
+            />
           ))}
         </div>
+        {summary.data && visibleModules.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center">
+            <BookCopy className="mx-auto h-8 w-8 text-slate-400" aria-hidden />
+            <h3 className="mt-3 font-semibold text-slate-800">Belum ada program</h3>
+            <p className="mt-1 text-sm text-slate-500">Tambahkan modul pertama untuk mulai membangun pembelajaran opsional.</p>
+          </div>
+        )}
       </section>
 
       <Modal
         open={moduleDialogOpen}
         title="Tambah Modul Baru"
-        description="Buat entri modul untuk pratinjau dashboard ini."
+        description="Buat program pembelajaran opsional untuk lembagamu."
         onClose={() => setModuleDialogOpen(false)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setModuleDialogOpen(false)}>
               Batal
             </Button>
-            <Button type="submit" form="create-module-form" icon={<Plus className="h-4 w-4" aria-hidden />}>
-              Tambah Modul
+            <Button type="submit" form="create-module-form" disabled={saving} icon={<Plus className="h-4 w-4" aria-hidden />}>
+              {saving ? 'Menyimpan…' : 'Tambah Modul'}
             </Button>
           </>
         }
@@ -214,7 +223,7 @@ export default function LembagaDashboard() {
             </select>
           </Field>
           <p className="text-xs leading-5 text-slate-500">
-            Ini hanya pratinjau lokal. Modul belum disimpan ke server.
+            Program dibuat sebagai draf. Isi bab, materi, dan harga lewat menu Kelola Modul dan Jelajahi.
           </p>
         </form>
       </Modal>
@@ -222,24 +231,31 @@ export default function LembagaDashboard() {
       <Modal
         open={reportDialogOpen}
         title="Laporan Lembaga"
-        description="Ringkasan contoh untuk pratinjau desain dashboard."
+        description="Ringkasan program dan pendapatan lembaga Anda."
         onClose={() => setReportDialogOpen(false)}
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <ReportMetric label="Total siswa" value="40 siswa" />
-          <ReportMetric label="Total enrollment" value="15 enrollment" />
+          <ReportMetric label="Total siswa" value={`${cards?.total_students ?? 0} siswa`} />
+          <ReportMetric label="Total enrollment" value={`${cards?.total_enrollments ?? 0} enrollment`} />
           <ReportMetric label="Modul aktif" value={`${activeModules} modul`} />
-          <ReportMetric label="Pemasukan kerja sama" value="Belum tersedia" />
+          <ReportMetric label="Pemasukan kerja sama" value={`Rp ${currency.format(cards?.total_revenue ?? 0)}`} />
         </div>
-        <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-500">
-          Angka pada halaman ini adalah data statis untuk referensi tampilan, bukan data aktual.
-        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setReportDialogOpen(false)
+            navigate('/lembaga/explore')
+          }}
+          className="mt-4 w-full rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-blue-50"
+        >
+          Buka laporan lengkap di Jelajahi
+        </button>
       </Modal>
 
       <Modal
         open={selectedModule !== null}
         title={selectedModule?.title ?? 'Detail Modul'}
-        description="Ringkasan modul pada pratinjau dashboard."
+        description="Ringkasan program pada dashboard."
         onClose={() => setSelectedModule(null)}
         footer={
           <>
@@ -260,13 +276,14 @@ export default function LembagaDashboard() {
       >
         {selectedModule && (
           <div className="grid grid-cols-2 gap-3">
-            <ReportMetric label="Target peserta" value={selectedModule.level} />
-            <ReportMetric label="Materi" value={`${selectedModule.modules} modul`} />
-            <ReportMetric label="Sesi belajar" value={`${selectedModule.sessions} sesi`} />
-            <ReportMetric label="Status" value="Aktif" />
+            <ReportMetric label="Target peserta" value={selectedModule.category ?? 'Umum'} />
+            <ReportMetric label="Materi" value={`${selectedModule.modules_count} modul`} />
+            <ReportMetric label="Sesi belajar" value={`${selectedModule.sessions_count} sesi`} />
+            <ReportMetric label="Status" value={selectedModule.status_label} />
+            <ReportMetric label="Harga" value={selectedModule.price_label} />
+            <ReportMetric label="Pendapatan" value={`Rp ${currency.format(selectedModule.revenue)}`} />
           </div>
         )}
-        <p className="mt-4 text-xs leading-5 text-slate-500">Detail dan perubahan modul akan tersedia pada tahap berikutnya.</p>
       </Modal>
     </div>
   )
@@ -334,8 +351,8 @@ function QuickAction({
   )
 }
 
-function ModuleCard({ module, onClick }: { module: LearningModule; onClick: () => void }) {
-  const style = TONE_STYLES[module.tone]
+function ModuleCard({ program, tone, onClick }: { program: LembagaProgram; tone: ModuleTone; onClick: () => void }) {
+  const style = TONE_STYLES[tone]
   const CoverIcon = style.icon
 
   return (
@@ -347,7 +364,7 @@ function ModuleCard({ module, onClick }: { module: LearningModule; onClick: () =
       <div className={`relative flex h-40 items-center justify-center overflow-hidden bg-gradient-to-br ${style.background}`}>
         <span className="absolute -left-7 -top-10 h-40 w-40 rounded-full border border-white/15" />
         <span className="absolute -bottom-16 -right-5 h-48 w-48 rounded-full border border-white/15" />
-        {module.tone === 'code' && (
+        {tone === 'code' && (
           <div className="absolute inset-0 grid grid-cols-8 gap-2 p-4 opacity-20" aria-hidden>
             {Array.from({ length: 32 }, (_, index) => (
               <span key={index} className={`h-1 rounded ${index % 3 === 0 ? 'bg-cyan-200' : 'bg-white'}`} />
@@ -356,23 +373,23 @@ function ModuleCard({ module, onClick }: { module: LearningModule; onClick: () =
         )}
         <CoverIcon
           className={`relative h-16 w-16 transition-transform group-hover:scale-110 ${
-            module.tone === 'design' ? 'text-rose-700/70' : 'text-white/80'
+            tone === 'design' ? 'text-rose-700/70' : 'text-white/80'
           }`}
           strokeWidth={1.25}
           aria-label={style.label}
         />
         <span className="absolute right-3 top-3 rounded-md bg-white/90 px-2 py-1 text-[10px] font-bold text-slate-700 shadow-sm">
-          {module.level}
+          {program.category ?? 'Umum'}
         </span>
       </div>
       <div className="p-4">
-        <h3 className="min-h-12 text-lg font-bold leading-6 text-slate-900">{module.title}</h3>
+        <h3 className="min-h-12 text-lg font-bold leading-6 text-slate-900">{program.title}</h3>
         <div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1">
-            <Folder className="h-3.5 w-3.5" aria-hidden /> {module.modules} Modul
+            <Folder className="h-3.5 w-3.5" aria-hidden /> {program.modules_count} Modul
           </span>
           <span className="inline-flex items-center gap-1">
-            <Clock3 className="h-3.5 w-3.5" aria-hidden /> {module.sessions} Sesi
+            <Clock3 className="h-3.5 w-3.5" aria-hidden /> {program.sessions_count} Sesi
           </span>
         </div>
       </div>

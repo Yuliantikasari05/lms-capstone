@@ -184,6 +184,20 @@ class EnrollmentController extends Controller
 
         $href = $course->allowsXp() ? '/siswa/materials' : '/karyawan/notifications';
 
+        // Program Lembaga: pemilik program (akun Lembaga) yang perlu tahu pesertanya bertambah.
+        $owner = NotificationRecipients::institutionOwner($course, 'courses.view', $actor);
+        if ($owner !== null && $names !== '') {
+            $owner->notify(new LearningNotification(
+                LearningNotification::CATEGORY_ROSTER,
+                'Peserta baru di '.$course->title,
+                $names.' baru terdaftar pada program lembaga Anda. Periksa daftar siswa untuk memantau progresnya.',
+                $actor->name,
+                $actorRole,
+                'Lihat siswa',
+                '/lembaga/students',
+            ));
+        }
+
         foreach ($enrollments as $enrollment) {
             $user = $enrollment->user;
             if ($user === null || $user->is($actor)) {

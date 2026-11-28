@@ -7,6 +7,7 @@ import { Notice } from '../../../components/ui/Notice'
 import { EmptyState, ErrorState, Spinner } from '../../../components/ui/States'
 import { AssignMentorModal } from '../../../features/courses/components/AssignMentorModal'
 import { ComingSoonTab } from '../../../features/courses/components/ComingSoonTab'
+import { CourseDiscussions } from '../../../features/discussions/CourseDiscussions'
 import { CourseFormModal } from '../../../features/courses/components/CourseFormModal'
 import { ModulesTab } from '../../../features/courses/components/ModulesTab'
 import { ParticipantsTab } from '../../../features/courses/components/ParticipantsTab'
@@ -170,7 +171,7 @@ export default function CourseDetailPage() {
         {tab === 'modules' && <ModulesTab course={data} readOnly={contentReadOnly} onChanged={course.reload} />}
         {tab === 'sessions' && <SessionsTab course={data} readOnly={contentReadOnly} onChanged={course.reload} />}
         {tab === 'participants' && <ParticipantsTab course={data} readOnly={participantsReadOnly} onChanged={course.reload} />}
-        {tab === 'discussions' && <ComingSoonTab title="Diskusi belum tersedia" description="Forum diskusi kursus akan hadir setelah cakupannya ditetapkan." />}
+        {tab === 'discussions' && <CourseDiscussions courseId={data.id} />}
         {tab === 'exams' && <ComingSoonTab title="Ujian belum tersedia" description="Review pengajuan ujian dari Mentor akan hadir di tahap penilaian." />}
       </div>
 

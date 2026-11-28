@@ -7,6 +7,8 @@ use App\Models\AssignmentSubmission;
 use App\Models\ClassSession;
 use App\Models\Coupon;
 use App\Models\Course;
+use App\Models\CourseDiscussion;
+use App\Models\CourseDiscussionReply;
 use App\Models\CourseModule;
 use App\Models\Enrollment;
 use App\Models\Institution;
@@ -158,6 +160,17 @@ class RbacEnforcementTest extends TestCase
             ],
             'reports.view' => [fn ($f) => ['GET', "$base/siswa/report"]],
             'leaderboard.view' => [fn ($f) => ['GET', "$base/siswa/leaderboard"]],
+
+            'lembaga.students.view' => [fn ($f) => ['GET', "$base/lembaga/students"], fn ($f) => ['GET', "$base/lembaga/students/{$f->student->id}"]],
+            'lembaga.vouchers.view' => [fn ($f) => ['GET', "$base/lembaga/vouchers"], fn ($f) => ['GET', "$base/lembaga/vouchers/{$f->coupon->id}"]],
+            'lembaga.vouchers.create' => [fn ($f) => ['POST', "$base/lembaga/vouchers", ['name' => 'Voucher Uji', 'code' => 'LEM'.random_int(1000, 9999), 'discount_type' => 'percentage', 'discount_value' => 10, 'expires_at' => now()->addMonth()->toDateString()]]],
+            'lembaga.vouchers.update' => [fn ($f) => ['PATCH', "$base/lembaga/vouchers/{$f->coupon->id}", ['name' => 'Diubah']]],
+            'lembaga.vouchers.delete' => [fn ($f) => ['DELETE', "$base/lembaga/vouchers/{$f->coupon->id}"]],
+            'lembaga.pricing.view' => [fn ($f) => ['GET', "$base/lembaga/pricing"]],
+            'lembaga.pricing.update' => [fn ($f) => ['PATCH', "$base/lembaga/programs/{$f->course->id}/pricing", ['price' => 100_000, 'discount_price' => null]]],
+            'lembaga.profile.view' => [fn ($f) => ['GET', "$base/lembaga/profile"]],
+            'lembaga.profile.update' => [fn ($f) => ['PATCH', "$base/lembaga/profile", ['description' => 'Diubah']]],
+            'lembaga.report.view' => [fn ($f) => ['GET', "$base/lembaga/reports"]],
         ];
     }
 
@@ -244,6 +257,17 @@ class RbacEnforcementTest extends TestCase
             'institutions.delete' => [fn ($f) => ['DELETE', "$b/institutions/{$f->emptyInstitution->id}"]],
             'institution_payouts.create' => [fn ($f) => ['POST', "$b/institutions/{$f->institution->id}/payouts", ['amount' => 1000]]],
             'institution_payouts.update' => [fn ($f) => ['PATCH', "$b/institutions/{$f->institution->id}/payouts/{$f->payout->id}", ['status' => 'completed']]],
+
+            'lembaga_students.read' => [fn ($f) => ['GET', "$b/lembaga/students"], fn ($f) => ['GET', "$b/lembaga/students/{$f->student->id}"]],
+            'lembaga_vouchers.create' => [fn ($f) => ['POST', "$b/lembaga/vouchers", ['name' => 'Voucher Uji', 'code' => 'CELL'.random_int(1000, 9999), 'discount_type' => 'percentage', 'discount_value' => 10, 'expires_at' => now()->addMonth()->toDateString()]]],
+            'lembaga_vouchers.read' => [fn ($f) => ['GET', "$b/lembaga/vouchers"], fn ($f) => ['GET', "$b/lembaga/vouchers/{$f->coupon->id}"]],
+            'lembaga_vouchers.update' => [fn ($f) => ['PATCH', "$b/lembaga/vouchers/{$f->coupon->id}", ['name' => 'Diubah']]],
+            'lembaga_vouchers.delete' => [fn ($f) => ['DELETE', "$b/lembaga/vouchers/{$f->coupon->id}"]],
+            'lembaga_pricing.read' => [fn ($f) => ['GET', "$b/lembaga/pricing"]],
+            'lembaga_pricing.update' => [fn ($f) => ['PATCH', "$b/lembaga/programs/{$f->course->id}/pricing", ['price' => 100_000]]],
+            'lembaga_profile.read' => [fn ($f) => ['GET', "$b/lembaga/profile"]],
+            'lembaga_profile.update' => [fn ($f) => ['PATCH', "$b/lembaga/profile", ['description' => 'Diubah']]],
+            'lembaga_report.read' => [fn ($f) => ['GET', "$b/lembaga/reports"]],
 
             'roles.create' => [fn ($f) => ['POST', "$b/settings/roles", ['name' => 'Peran Uji '.uniqid()]]],
             'roles.read' => [fn ($f) => ['GET', "$b/settings/roles"], fn ($f) => ['GET', "$b/settings/roles/{$f->customRole->id}"], fn ($f) => ['GET', "$b/settings/permissions"]],
@@ -367,7 +391,24 @@ class RbacEnforcementTest extends TestCase
 
         $institution = Institution::factory()->withBank()->create();
         Transaction::factory()->amount(1_000_000)->create(['institution_id' => $institution->id]);
+
+        // Endpoint swa-layan Lembaga membaca profil dari akun yang login (bukan id dari klien).
+        // Fixture dibuat ulang beberapa kali per test, jadi profil hanya dibuat bila belum ada.
+        if ($roleKey === Catalog::LEMBAGA && ! Institution::where('user_id', $actor->id)->exists()) {
+            Institution::factory()->create(['user_id' => $actor->id, 'deleted_at' => null]);
+        }
         $module = CourseModule::factory()->create(['course_id' => $course->id]);
+
+        // Forum diskusi kursus: topik dan satu balasan milik peserta (bukan pelaku uji).
+        $discussion = new CourseDiscussion(['title' => 'Diskusi Fixture '.$n, 'body' => 'Isi diskusi fixture.']);
+        $discussion->course_id = $course->id;
+        $discussion->user_id = $student->id;
+        $discussion->save();
+
+        $reply = new CourseDiscussionReply(['body' => 'Balasan fixture '.$n]);
+        $reply->course_discussion_id = $discussion->id;
+        $reply->user_id = $student->id;
+        $reply->save();
 
         return (object) [
             'student' => $student,
@@ -383,9 +424,14 @@ class RbacEnforcementTest extends TestCase
                 'user_id' => $student->id, 'submitted_at' => now(), 'status' => AssignmentSubmission::STATUS_SUBMITTED,
             ]),
             'enrollment' => Enrollment::factory()->create(['course_id' => $course->id, 'user_id' => $student->id]),
-            'coupon' => Coupon::factory()->create(),
+            // Voucher Lembaga dimiliki akun yang diuji; kupon Admin tetap dipakai probe kupon Admin.
+            'coupon' => $roleKey === Catalog::LEMBAGA
+                ? Coupon::factory()->create(['owner_type' => Coupon::OWNER_INSTITUTION, 'owner_id' => $actor->id])
+                : Coupon::factory()->create(),
             'level' => Level::create(['name' => 'Level Fixture '.$n, 'min_xp' => $n * 1000]),
             'institution' => $institution,
+            'discussion' => $discussion,
+            'reply' => $reply,
             'emptyInstitution' => Institution::factory()->create(),
             'payout' => InstitutionPayout::create(['code' => 'PO-RBAC-'.$n, 'amount' => 1000, 'institution_id' => $institution->id]),
             'customRole' => Role::create(['slug' => 'peran-fixture-'.$n, 'name' => 'Peran Fixture '.$n]),
@@ -567,6 +613,7 @@ class RbacEnforcementTest extends TestCase
             'enrollment' => $f->enrollment->id, 'coupon' => $f->coupon->id, 'user' => $f->student->id, 'institution' => $f->institution->id,
             'payout' => $f->payout->id, 'role' => $f->customRole->id, 'level' => $f->level->id,
             'assignment' => $f->assignment->id, 'submission' => $f->submission->id,
+            'discussion' => $f->discussion->id, 'reply' => $f->reply->id,
         ];
 
         foreach ($names as $name) {
@@ -616,9 +663,9 @@ class RbacEnforcementTest extends TestCase
         usort($routes, fn ($a, $b) => (int) ($a[0] !== 'GET') <=> (int) ($b[0] !== 'GET'));
 
         foreach ($routes as [$method, $uri, $names]) {
-            // Rute /siswa/* hanya mengembalikan data milik peserta yang login (peran Siswa), sama seperti
-            // batas kepemilikan pada Policy: Admin pun tidak boleh membaca data belajar orang lain lewat rute ini.
-            if (str_starts_with($uri, '/api/v1/siswa/')) {
+            // Rute /siswa/* dan /lembaga/* menyajikan data milik pengguna yang login (peran Siswa/Lembaga),
+            // sama seperti batas kepemilikan pada Policy: Admin pun tidak boleh membaca data orang lain lewat rute itu.
+            if (str_starts_with($uri, '/api/v1/siswa/') || str_starts_with($uri, '/api/v1/lembaga/')) {
                 continue;
             }
 

@@ -49,7 +49,15 @@ class Course extends Model
     ];
 
     /** mentor_id dan created_by sengaja tidak fillable: diisi eksplisit oleh controller. */
-    protected $fillable = ['type', 'title', 'description', 'status'];
+    protected $fillable = ['type', 'title', 'description', 'status', 'category'];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'integer',
+            'discount_price' => 'integer',
+        ];
+    }
 
     // ------------------------------------------------------------------ relasi
 
@@ -85,9 +93,21 @@ class Course extends Model
         return $this->hasMany(Enrollment::class);
     }
 
+    /** Forum diskusi kursus (satu forum untuk seluruh kelas). */
+    public function discussions(): HasMany
+    {
+        return $this->hasMany(CourseDiscussion::class);
+    }
+
     public function activeEnrollments(): HasMany
     {
         return $this->enrollments()->where('status', Enrollment::STATUS_ACTIVE);
+    }
+
+    /** Penjualan program (dipakai laporan lembaga dan bagi hasil). */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
     }
 
     // ------------------------------------------------------------------ aturan jenis kursus
@@ -120,6 +140,26 @@ class Course extends Model
     public function isInstitutionProgram(): bool
     {
         return $this->type === self::TYPE_INSTITUTION;
+    }
+
+    /** Harga yang benar-benar dibayar: harga diskon bila ada dan lebih murah, selain itu harga normal. */
+    public function effectivePrice(): int
+    {
+        if ($this->discount_price !== null && $this->discount_price < $this->price) {
+            return $this->discount_price;
+        }
+
+        return (int) $this->price;
+    }
+
+    public function isFree(): bool
+    {
+        return $this->effectivePrice() <= 0;
+    }
+
+    public function priceLabel(): string
+    {
+        return $this->isFree() ? 'Gratis' : 'Rp '.number_format($this->effectivePrice(), 0, ',', '.');
     }
 
     /** Program Lembaga tidak memakai Mentor. */

@@ -103,13 +103,13 @@ final class Catalog
 
             // ------------------------------------------------------------------ Kurikulum dan Kursus
             self::act('curriculum', 'courses', 'Data Kursus dan Kurikulum', 'Membuat, melihat, ubah, dan hapus data kursus.', [
-                'create' => ['courses.create', [self::ADMIN, self::MENTOR]],
+                'create' => ['courses.create', [self::ADMIN, self::MENTOR, self::LEMBAGA]],
                 'read' => ['courses.view', [self::ADMIN, self::MENTOR, self::LEMBAGA]],
                 'update' => ['courses.update', [self::ADMIN, self::MENTOR, self::LEMBAGA]],
                 'delete' => ['courses.delete', $A],
             ], labels: [
                 self::MENTOR => ['Kursus yang Saya Ampu', 'Membuat dan mengelola kursus yang diampu sendiri.'],
-                self::LEMBAGA => ['Program Lembaga Saya', 'Melihat dan mengubah program milik lembaga sendiri.'],
+                self::LEMBAGA => ['Program Lembaga Saya', 'Membuat dan mengubah program milik lembaga sendiri.'],
             ], own: [self::MENTOR, self::LEMBAGA]),
             self::act('curriculum', 'modules_materials', 'Modul dan Materi', 'Mengelola modul, materi, video, dan berkas pembelajaran.', [
                 'create' => ['content.manage', [self::ADMIN, self::MENTOR, self::LEMBAGA]],
@@ -201,12 +201,27 @@ final class Catalog
                 'create' => ['institutions.payout', $AC], 'update' => ['institutions.payout', $AC],
             ]),
 
-            // ------------------------------------------------------------------ Pengelolaan oleh Lembaga sendiri (belum dibangun)
-            self::planned('institution_self', 'lembaga_students', 'Kelola Siswa Lembaga', 'Melihat siswa sendiri, laporan belajar, dan berdiskusi (FR-22).', [self::LEMBAGA => ['read']], $planned),
-            self::planned('institution_self', 'lembaga_vouchers', 'Voucher Lembaga', 'Mengelola voucher promosi milik lembaga (FR-24).', [self::LEMBAGA => ['create', 'read', 'update', 'delete']], $planned),
-            self::planned('institution_self', 'lembaga_pricing', 'Atur Harga Modul', 'Mengatur harga modul pembelajaran lembaga.', [self::LEMBAGA => ['read', 'update']], $planned),
-            self::planned('institution_self', 'lembaga_profile', 'Profil Lembaga', 'Melihat dan memperbarui profil dan pengaturan lembaga.', [self::LEMBAGA => ['read', 'update']], $planned),
-            self::planned('institution_self', 'lembaga_report', 'Laporan Keuangan dan Jelajahi', 'Melihat laporan keuangan dan jumlah pendaftar modul (FR-23).', [self::LEMBAGA => ['read']], $planned),
+            // ------------------------------------------------------------------ Pengelolaan oleh Lembaga sendiri (hanya data miliknya)
+            self::act('institution_self', 'lembaga_students', 'Kelola Siswa Lembaga', 'Melihat siswa yang mengikuti program lembaga dan progres belajarnya (FR-22).', [
+                'read' => ['lembaga.students.view', [self::LEMBAGA]],
+            ], own: [self::LEMBAGA]),
+            self::act('institution_self', 'lembaga_vouchers', 'Voucher Lembaga', 'Mengelola voucher promosi milik lembaga (FR-24).', [
+                'create' => ['lembaga.vouchers.create', [self::LEMBAGA]],
+                'read' => ['lembaga.vouchers.view', [self::LEMBAGA]],
+                'update' => ['lembaga.vouchers.update', [self::LEMBAGA]],
+                'delete' => ['lembaga.vouchers.delete', [self::LEMBAGA]],
+            ], own: [self::LEMBAGA]),
+            self::act('institution_self', 'lembaga_pricing', 'Atur Harga Modul', 'Mengatur harga normal dan harga diskon program lembaga.', [
+                'read' => ['lembaga.pricing.view', [self::LEMBAGA]],
+                'update' => ['lembaga.pricing.update', [self::LEMBAGA]],
+            ], own: [self::LEMBAGA]),
+            self::act('institution_self', 'lembaga_profile', 'Profil Lembaga', 'Melihat dan memperbarui profil serta pengaturan lembaga.', [
+                'read' => ['lembaga.profile.view', [self::LEMBAGA]],
+                'update' => ['lembaga.profile.update', [self::LEMBAGA]],
+            ], own: [self::LEMBAGA]),
+            self::act('institution_self', 'lembaga_report', 'Laporan Keuangan dan Jelajahi', 'Melihat laporan pendapatan, pendaftar, dan voucher program lembaga (FR-23).', [
+                'read' => ['lembaga.report.view', [self::LEMBAGA]],
+            ], own: [self::LEMBAGA]),
 
             // ------------------------------------------------------------------ Setting (Admin)
             self::planned('settings', 'system_settings', 'Pengaturan Sistem', 'Melihat dan mengubah konfigurasi umum platform.', [self::ADMIN => ['read', 'update']], $planned),

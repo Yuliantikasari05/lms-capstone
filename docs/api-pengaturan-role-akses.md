@@ -306,7 +306,7 @@ Tabel di bawah dihasilkan dari katalog kode (`App\Support\Rbac\Catalog`). Kolom 
 
 | Aktivitas | C | R | U | D |
 |---|---|---|---|---|
-| Program Lembaga Saya | · | `courses.view` | `courses.update` | · |
+| Program Lembaga Saya | `courses.create` | `courses.view` | `courses.update` | · |
 | Modul dan Materi | `content.manage` | `courses.view` | `content.manage` | `content.manage` |
 | Sesi dan Live | `content.manage` | `courses.view` | `content.manage` | `content.manage` |
 | Kelola Diskusi dan Komentar | (belum) | (belum) | (belum) | (belum) |
@@ -315,11 +315,14 @@ Tabel di bawah dihasilkan dari katalog kode (`App\Support\Rbac\Catalog`). Kolom 
 
 | Aktivitas | C | R | U | D |
 |---|---|---|---|---|
-| Kelola Siswa Lembaga | · | (belum) | · | · |
-| Voucher Lembaga | (belum) | (belum) | (belum) | (belum) |
-| Atur Harga Modul | · | (belum) | (belum) | · |
-| Profil Lembaga | · | (belum) | (belum) | · |
-| Laporan Keuangan dan Jelajahi | · | (belum) | · | · |
+| Kelola Siswa Lembaga | · | `lembaga.students.view` | · | · |
+| Voucher Lembaga | `lembaga.vouchers.create` | `lembaga.vouchers.view` | `lembaga.vouchers.update` | `lembaga.vouchers.delete` |
+| Atur Harga Modul | · | `lembaga.pricing.view` | `lembaga.pricing.update` | · |
+| Profil Lembaga | · | `lembaga.profile.view` | `lembaga.profile.update` | · |
+| Laporan Keuangan dan Jelajahi | · | `lembaga.report.view` | · | · |
+
+Seluruh baris di atas hanya berlaku untuk data milik lembaga sendiri (`scope: own`). Detail kontrak:
+`docs/api-lembaga-swa-layanan.md`.
 
 ### Role khusus (buatan Admin)
 

@@ -19,6 +19,7 @@ class CourseResource extends JsonResource
             'type_label' => $this->typeLabel(),
             'title' => $this->title,
             'description' => $this->description,
+            'category' => $this->category,
             'status' => $this->status,
             'status_label' => $this->statusLabel(),
             'mentor' => $this->whenLoaded('mentor', fn () => $this->mentor
@@ -31,6 +32,11 @@ class CourseResource extends JsonResource
             'participants_count' => $this->whenHas('participants_count'),
             // Akumulasi duration_minutes seluruh materi; 0 bila kursus belum punya materi.
             'duration_minutes' => (int) ($this->materials_duration_minutes ?? 0),
+            // Harga Program Lembaga (pembelajaran opsional). 0 = gratis.
+            'price' => (int) ($this->price ?? 0),
+            'discount_price' => $this->discount_price,
+            'is_free' => $this->isInstitutionProgram() && $this->isFree(),
+            'price_label' => $this->isInstitutionProgram() ? $this->priceLabel() : null,
             // Apa yang boleh dilakukan pengguna ini pada kursus ini (frontend menonaktifkan tombol sesuai ini;
             // backend tetap yang menentukan).
             'abilities' => $user ? [
