@@ -1,5 +1,4 @@
 import {
-  BookOpen,
   CalendarDays,
   Check,
   Clock3,
@@ -7,19 +6,33 @@ import {
   Plus,
   Trash2,
   Video,
+  X,
 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
+import { Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
+import type { ClassSession } from '../../features/courses/types'
+import { CourseDiscussions } from '../../features/discussions/CourseDiscussions'
 import { LembagaPageHeader } from './LembagaPageHeader'
 import { ResourcesTab } from './ResourcesTab'
-import { DiscussionsTab } from './DiscussionsTab'
 import { ModuleDetailHeader, type ModuleDetailTab } from './ModuleDetailHeader'
-import { getModuleById, isManagedModule, type ManagedModule } from './moduleData'
+import type { ManagedModule } from './moduleData'
+import {
+  createSession,
+  deleteSession,
+  fetchProgram,
+  listModules,
+  listSessions,
+  updateProgram,
+  updateSession,
+} from './api'
 
-type SessionStatus = 'Mendatang' | 'Selesai'
+/** Baris sesi yang ditampilkan; dipetakan dari respons API tanpa mengubah tampilan daftar. */
 interface CourseSession {
   id: number
   title: string
@@ -28,112 +41,133 @@ interface CourseSession {
   dateLabel: string
   time: string
   platform: string
-  status: SessionStatus
+  status: 'Mendatang' | 'Selesai'
+  source: ClassSession
 }
 
-const INITIAL_SESSIONS: CourseSession[] = [
-  {
-    id: 1,
-    title: 'Live Mentoring: Introduction to Backend',
-    month: 'JUN',
-    day: '25',
-    dateLabel: 'Senin, 25 Juni 2025',
-    time: '19:00 - 21:00 WIB',
-    platform: 'Zoom Meeting',
-    status: 'Mendatang',
-  },
-  {
-    id: 2,
-    title: 'Q&A Session: HTML & CSS Fundamentals',
-    month: 'JUN',
-    day: '18',
-    dateLabel: 'Rabu, 18 Juni 2025',
-    time: '19:00 - 20:30 WIB',
-    platform: 'Google Meet',
-    status: 'Selesai',
-  },
-  {
-    id: 3,
-    title: 'Final Project Workshop: Database Design',
-    month: 'JUL',
-    day: '02',
-    dateLabel: 'Rabu, 02 Juli 2025',
-    time: '19:00 - 21:00 WIB',
-    platform: 'Zoom Meeting',
-    status: 'Mendatang',
-  },
-]
+const JAKARTA = 'Asia/Jakarta'
+const MONTH_LABELS = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES']
+/** Durasi sesi bawaan saat dibuat dari formulir (jam selesai tidak punya kolom sendiri). */
+const DEFAULT_DURATION_MINUTES = 120
 
 export default function DetailModulSessions() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { moduleId } = useParams()
-  const routeState = location.state as { moduleData?: unknown } | null
-  const routeModule = isManagedModule(routeState?.moduleData) && String(routeState.moduleData.id) === moduleId
-    ? routeState.moduleData
+  const courseId = Number(moduleId)
+  const validId = Number.isInteger(courseId) && courseId > 0
+
+  // Endpoint kursus, modul, dan sesi memakai aturan CoursePolicy yang sama seperti backend.
+  const program = useApiData(() => fetchProgram(courseId), [courseId])
+  const modules = useApiData(() => listModules(courseId), [courseId])
+  const sessionList = useApiData(() => listSessions(courseId), [courseId])
+
+  const sessions = (sessionList.data ?? []).map(toCourseSession)
+  const module: ManagedModule | undefined = program.data
+    ? {
+        id: courseId,
+        title: program.data.title,
+        status: program.data.status === 'active' ? 'Aktif' : 'Draft',
+        chapters: modules.data?.length ?? program.data.modules_count ?? 0,
+        studyHours: Math.round(((program.data.duration_minutes ?? 0) / 60) * 10) / 10,
+        sessions: sessions.length,
+        students: program.data.participants_count ?? 0,
+        expanded: false,
+      }
     : undefined
-  const [moduleOverride, setModuleOverride] = useState<ManagedModule | null>(null)
-  const module = moduleOverride && String(moduleOverride.id) === moduleId
-    ? moduleOverride
-    : routeModule ?? getModuleById(moduleId)
-  const [sessions, setSessions] = useState(INITIAL_SESSIONS)
+
   const [activeTab, setActiveTab] = useState<ModuleDetailTab>('Sessions')
   const [reportOpen, setReportOpen] = useState(false)
   const [sessionDialog, setSessionDialog] = useState<'create' | 'edit' | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null)
-  const [deleteSession, setDeleteSession] = useState<CourseSession | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<CourseSession | null>(null)
   const [sessionTitle, setSessionTitle] = useState('')
   const [sessionDate, setSessionDate] = useState('')
   const [sessionTime, setSessionTime] = useState('')
   const [sessionPlatform, setSessionPlatform] = useState('Zoom Meeting')
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus>('Mendatang')
+  const [sessionLink, setSessionLink] = useState('')
+  const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+
+  const errorMessage =
+    (program.error ?? modules.error ?? sessionList.error)?.message ?? ''
 
   function openCreateSession() {
     setEditingSessionId(null)
     setSessionTitle('')
     setSessionDate('')
-    setSessionTime('')
+    setSessionTime('19:00')
     setSessionPlatform('Zoom Meeting')
-    setSessionStatus('Mendatang')
+    setSessionLink('')
     setSessionDialog('create')
   }
 
-  function openEditSession(session: CourseSession) {
+  function openEditSession(session: ClassSession) {
+    const start = jakartaParts(session.starts_at)
     setEditingSessionId(session.id)
     setSessionTitle(session.title)
-    setSessionDate(session.dateLabel)
-    setSessionTime(session.time)
-    setSessionPlatform(session.platform)
-    setSessionStatus(session.status)
+    setSessionDate(start.date)
+    setSessionTime(start.time)
+    setSessionPlatform(session.meeting_url?.includes('meet.google') ? 'Google Meet' : 'Zoom Meeting')
+    setSessionLink(session.meeting_url ?? '')
     setSessionDialog('edit')
   }
 
-  function saveSession(event: FormEvent<HTMLFormElement>) {
+  async function saveSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const title = sessionTitle.trim()
-    if (!title) return
+    if (!title || !sessionDate || !sessionTime) return
 
-    const calendarDate = getCalendarDate(sessionDate)
-    const nextSession: CourseSession = {
-      id: editingSessionId ?? Date.now(),
+    const input = {
       title,
-      month: calendarDate.month,
-      day: calendarDate.day,
-      dateLabel: sessionDate.trim(),
-      time: sessionTime.trim() || '19:00 - 20:00 WIB',
-      platform: sessionPlatform,
-      status: sessionStatus,
+      date: sessionDate,
+      startTime: sessionTime,
+      endTime: addMinutes(sessionTime, DEFAULT_DURATION_MINUTES),
+      meetingUrl: sessionLink.trim() || null,
     }
 
-    if (sessionDialog === 'edit' && editingSessionId !== null) {
-      setSessions((current) => current.map((item) => (item.id === editingSessionId ? nextSession : item)))
-      setNotice('Sesi berhasil diperbarui pada pratinjau.')
-    } else {
-      setSessions((current) => [...current, nextSession])
-      setNotice('Sesi berhasil ditambahkan pada pratinjau.')
+    setBusy(true)
+    try {
+      if (sessionDialog === 'edit' && editingSessionId !== null) {
+        await updateSession(editingSessionId, input)
+        setNotice('Sesi berhasil diperbarui.')
+      } else {
+        await createSession(courseId, input)
+        setNotice('Sesi berhasil ditambahkan dan sudah terlihat oleh siswa.')
+      }
+      setSessionDialog(null)
+      // Jumlah sesi pada header dihitung dari daftar sesi, bukan dari ringkasan program.
+      sessionList.reload()
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setBusy(false)
     }
-    setSessionDialog(null)
+  }
+
+  async function removeSession() {
+    if (!deleteTarget) return
+
+    setBusy(true)
+    try {
+      await deleteSession(deleteTarget.id)
+      setNotice('Sesi berhasil dihapus.')
+      setDeleteTarget(null)
+      sessionList.reload()
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function renameModule(title: string) {
+    try {
+      await updateProgram(courseId, { title })
+      setNotice('Nama program berhasil diperbarui.')
+      program.reload()
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    }
   }
 
   function changeTab(tab: ModuleDetailTab) {
@@ -144,6 +178,21 @@ export default function DetailModulSessions() {
     setActiveTab(tab)
   }
 
+  if (!validId || (program.loading && !program.data)) {
+    return (
+      <div className="space-y-6">
+        <LembagaPageHeader onReportClick={() => setReportOpen(true)} />
+        {validId ? (
+          <Spinner label="Memuat modul…" />
+        ) : (
+          <p className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">
+            Modul tidak ditemukan.
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <LembagaPageHeader onReportClick={() => setReportOpen(true)} />
@@ -152,17 +201,15 @@ export default function DetailModulSessions() {
         onTabChange={changeTab}
         onAddModule={() => navigate('/lembaga/modules/new')}
         module={module}
-        onRename={(title) => {
-          if (module) setModuleOverride({ ...module, title })
-        }}
+        onRename={renameModule}
       />
 
-      {notice && (
+      {(notice || errorMessage) && (
         <div
           role="status"
           className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"
         >
-          <span>{notice}</span>
+          <span>{notice || errorMessage}</span>
           <button type="button" className="font-semibold hover:underline" onClick={() => setNotice('')}>
             Tutup
           </button>
@@ -171,10 +218,10 @@ export default function DetailModulSessions() {
 
       <section aria-labelledby="upcoming-sessions-title">
         {activeTab === 'Discussions' ? (
-          <DiscussionsTab />
+          <CourseDiscussions courseId={courseId} />
         ) : activeTab === 'Resources' ? (
-          <ResourcesTab />
-        ) : activeTab === 'Sessions' ? (
+          <ResourcesTab modules={modules.data ?? []} onChanged={modules.reload} />
+        ) : (
           <>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -192,14 +239,16 @@ export default function DetailModulSessions() {
               </Button>
             </div>
 
-            {sessions.length ? (
+            {sessionList.loading && !sessionList.data ? (
+              <Spinner label="Memuat sesi…" />
+            ) : sessions.length ? (
               <ul className="space-y-3">
                 {sessions.map((session) => (
                   <SessionRow
                     key={session.id}
                     session={session}
-                    onEdit={() => openEditSession(session)}
-                    onDelete={() => setDeleteSession(session)}
+                    onEdit={() => openEditSession(session.source)}
+                    onDelete={() => setDeleteTarget(session)}
                   />
                 ))}
               </ul>
@@ -211,26 +260,25 @@ export default function DetailModulSessions() {
               </div>
             )}
           </>
-        ) : (
-          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-            <BookOpen className="mx-auto h-8 w-8 text-brand-600" aria-hidden />
-            <h2 className="mt-3 font-semibold text-slate-900">{activeTab}</h2>
-            <p className="mt-1 text-sm text-slate-500">Konten tab ini akan tersedia pada tahap pengembangan berikutnya.</p>
-          </div>
         )}
       </section>
 
       <Modal
         open={sessionDialog !== null}
         title={sessionDialog === 'edit' ? 'Edit Sesi' : 'Tambah Sesi'}
-        description="Kelola informasi jadwal sesi pada pratinjau."
+        description="Kelola informasi jadwal sesi pada program ini."
         onClose={() => setSessionDialog(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setSessionDialog(null)}>
               Batal
             </Button>
-            <Button type="submit" form="session-form" icon={<Check className="h-4 w-4" aria-hidden />}>
+            <Button
+              type="submit"
+              form="session-form"
+              disabled={busy}
+              icon={<Check className="h-4 w-4" aria-hidden />}
+            >
               Simpan Sesi
             </Button>
           </>
@@ -251,21 +299,21 @@ export default function DetailModulSessions() {
           <Field id="session-date" label="Hari dan tanggal">
             <input
               id="session-date"
+              type="date"
               className={inputClass()}
               value={sessionDate}
               onChange={(event) => setSessionDate(event.target.value)}
-              placeholder="Contoh: Senin, 25 Juni 2025"
               required
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="session-time" label="Jam">
+            <Field id="session-time" label="Jam" hint="Sesi berdurasi 2 jam.">
               <input
                 id="session-time"
+                type="time"
                 className={inputClass()}
                 value={sessionTime}
                 onChange={(event) => setSessionTime(event.target.value)}
-                placeholder="19:00 - 21:00 WIB"
                 required
               />
             </Field>
@@ -281,39 +329,36 @@ export default function DetailModulSessions() {
               </select>
             </Field>
           </div>
-          <Field id="session-status" label="Status">
-            <select
-              id="session-status"
+          <Field id="session-link" label="Link meeting" hint="Tempel tautan Zoom atau Google Meet untuk sesi ini.">
+            <input
+              id="session-link"
+              type="url"
               className={inputClass()}
-              value={sessionStatus}
-              onChange={(event) => setSessionStatus(event.target.value as SessionStatus)}
-            >
-              <option>Mendatang</option>
-              <option>Selesai</option>
-            </select>
+              value={sessionLink}
+              onChange={(event) => setSessionLink(event.target.value)}
+              placeholder={sessionPlatform === 'Google Meet' ? 'https://meet.google.com/...' : 'https://zoom.us/j/...'}
+              required
+              maxLength={2048}
+            />
           </Field>
-          <p className="text-xs text-slate-500">Perubahan hanya disimpan sementara di pratinjau ini.</p>
+          <p className="text-xs text-slate-500">Sesi langsung tersimpan pada program dan terlihat oleh siswa.</p>
         </form>
       </Modal>
 
       <Modal
-        open={deleteSession !== null}
+        open={deleteTarget !== null}
         title="Hapus sesi?"
-        description={`Sesi "${deleteSession?.title ?? ''}" akan dihapus dari daftar pratinjau.`}
-        onClose={() => setDeleteSession(null)}
+        description={`Sesi "${deleteTarget?.title ?? ''}" akan dihapus dari program.`}
+        onClose={() => setDeleteTarget(null)}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDeleteSession(null)}>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
               Batal
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
-                if (deleteSession) {
-                  setSessions((current) => current.filter((session) => session.id !== deleteSession.id))
-                }
-                setDeleteSession(null)
-              }}
+              onClick={removeSession}
+              disabled={busy}
               icon={<Trash2 className="h-4 w-4" aria-hidden />}
             >
               Hapus Sesi
@@ -321,16 +366,33 @@ export default function DetailModulSessions() {
           </>
         }
       >
-        <p className="text-sm text-slate-600">Tindakan ini hanya mengubah data sementara pada halaman.</p>
+        <p className="text-sm text-slate-600">Siswa tidak akan melihat sesi ini lagi.</p>
       </Modal>
 
       <Modal
         open={reportOpen}
         title="Laporan Lembaga"
-        description="Ringkasan laporan belum tersedia di pratinjau statis."
+        description="Ringkasan laporan program lembaga Anda."
         onClose={() => setReportOpen(false)}
+        footer={
+          <Button variant="secondary" onClick={() => setReportOpen(false)} icon={<X className="h-4 w-4" aria-hidden />}>
+            Tutup
+          </Button>
+        }
       >
-        <p className="text-sm leading-6 text-slate-600">Data laporan akan tersedia setelah terhubung ke backend.</p>
+        <p className="text-sm leading-6 text-slate-600">
+          Laporan pendapatan, enrollment, dan harga tiap program tersedia di halaman Jelajahi.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setReportOpen(false)
+            navigate('/lembaga/explore')
+          }}
+          className="mt-4 w-full rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-blue-50"
+        >
+          Buka laporan
+        </button>
       </Modal>
     </div>
   )
@@ -417,27 +479,67 @@ function SessionAction({
   )
 }
 
-function getCalendarDate(value: string): { month: string; day: string } {
-  const months: Record<string, string> = {
-    januari: 'JAN',
-    februari: 'FEB',
-    maret: 'MAR',
-    april: 'APR',
-    mei: 'MEI',
-    juni: 'JUN',
-    juli: 'JUL',
-    agustus: 'AGU',
-    september: 'SEP',
-    oktober: 'OKT',
-    november: 'NOV',
-    desember: 'DES',
-  }
-  const parts = value.toLocaleLowerCase('id-ID').replace(',', '').split(/\s+/)
-  const monthIndex = parts.findIndex((part) => months[part] !== undefined)
-  const day = monthIndex > 0 ? parts[monthIndex - 1] : '01'
+/** Waktu ISO dari backend (offset +07:00) dipecah menurut zona waktu aplikasi. */
+function jakartaParts(iso: string): { date: string; time: string; month: number; day: string; hour: string; minute: string } {
+  const date = new Date(iso)
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: JAKARTA,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  )
+  const hour = parts.hour === '24' ? '00' : parts.hour
 
   return {
-    month: monthIndex >= 0 ? months[parts[monthIndex]] : 'JUN',
-    day: /^\d{1,2}$/.test(day) ? day.padStart(2, '0') : '01',
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${hour}:${parts.minute}`,
+    month: Number(parts.month) - 1,
+    day: parts.day,
+    hour,
+    minute: parts.minute,
   }
+}
+
+function toCourseSession(session: ClassSession): CourseSession {
+  const start = jakartaParts(session.starts_at)
+  const end = jakartaParts(session.ends_at)
+  const host = session.meeting_url?.toLowerCase() ?? ''
+
+  return {
+    id: session.id,
+    title: session.title,
+    month: MONTH_LABELS[start.month] ?? 'JUN',
+    day: start.day.padStart(2, '0'),
+    dateLabel: new Intl.DateTimeFormat('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: JAKARTA,
+    }).format(new Date(session.starts_at)),
+    time: `${start.hour}:${start.minute} - ${end.hour}:${end.minute} WIB`,
+    platform: host.includes('zoom')
+      ? 'Zoom Meeting'
+      : host.includes('meet.google')
+        ? 'Google Meet'
+        : host
+          ? 'Online'
+          : 'Tatap Muka',
+    status: session.status === 'finished' ? 'Selesai' : 'Mendatang',
+    source: session,
+  }
+}
+
+function addMinutes(value: string, minutes: number): string {
+  const [hours, mins] = value.split(':').map(Number)
+  const total = Math.min(hours * 60 + mins + minutes, 23 * 60 + 59)
+
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }

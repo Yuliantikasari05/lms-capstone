@@ -315,15 +315,16 @@ class EnrollmentApiTest extends TestCase
 
     // ------------------------------------------------------------------ otorisasi
 
-    public function test_admin_cannot_manage_enrollments_of_an_institution_program(): void
+    public function test_admin_can_manage_enrollments_of_an_institution_program(): void
     {
+        // Isi program dikelola Lembaga, tetapi pendaftaran peserta tetap wewenang Admin.
         $program = Course::factory()->institution($this->userWithRole(Role::LEMBAGA))->create();
         $enrollment = Enrollment::factory()->create(['course_id' => $program->id, 'user_id' => $this->siswa()->id]);
 
-        $this->enroll($program, [$this->siswa()->id])->assertForbidden();
-        $this->asAdmin()->getJson('/api/v1/courses/'.$program->id.'/enrollments')->assertForbidden();
-        $this->asAdmin()->getJson('/api/v1/courses/'.$program->id.'/enrollment-candidates')->assertForbidden();
-        $this->asAdmin()->deleteJson('/api/v1/enrollments/'.$enrollment->id)->assertForbidden();
+        $this->enroll($program, [$this->siswa()->id])->assertCreated();
+        $this->asAdmin()->getJson('/api/v1/courses/'.$program->id.'/enrollments')->assertOk();
+        $this->asAdmin()->getJson('/api/v1/courses/'.$program->id.'/enrollment-candidates')->assertOk();
+        $this->asAdmin()->deleteJson('/api/v1/enrollments/'.$enrollment->id)->assertOk();
     }
 
     public function test_a_deleted_course_has_no_manageable_enrollments(): void

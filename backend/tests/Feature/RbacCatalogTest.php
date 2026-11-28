@@ -73,11 +73,14 @@ class RbacCatalogTest extends TestCase
         $adminCan = Catalog::assignable(Catalog::ADMIN);
         $notForAdmin = array_values(array_diff(Catalog::enforcedSlugs(), $adminCan));
 
-        // Admin tidak memakai dashboard role lain, dan fitur belajar Siswa hanya untuk pemilik datanya sendiri.
+        // Admin tidak memakai dashboard role lain, fitur belajar Siswa hanya untuk pemilik datanya sendiri,
+        // dan pengelolaan mandiri Lembaga hanya untuk akun Lembaga yang bersangkutan.
         $this->assertEqualsCanonicalizing([
             'dashboard.mentor', 'dashboard.siswa', 'dashboard.karyawan', 'dashboard.lembaga',
             'learning.view', 'learning.progress', 'assignments.submit', 'schedule.view', 'schedule.join',
             'reports.view', 'leaderboard.view',
+            'lembaga.students.view', 'lembaga.vouchers.view', 'lembaga.vouchers.create', 'lembaga.vouchers.update', 'lembaga.vouchers.delete',
+            'lembaga.pricing.view', 'lembaga.pricing.update', 'lembaga.profile.view', 'lembaga.profile.update', 'lembaga.report.view',
         ], $notForAdmin);
     }
 
@@ -106,7 +109,12 @@ class RbacCatalogTest extends TestCase
             'dashboard.mentor', 'courses.view', 'courses.create', 'courses.update', 'content.manage',
             'assignments.view', 'assignments.manage', 'assignments.grade',
         ], Catalog::assignable(Catalog::MENTOR));
-        $this->assertEqualsCanonicalizing(['dashboard.lembaga', 'courses.view', 'courses.update', 'content.manage'], Catalog::assignable(Catalog::LEMBAGA));
+        // Lembaga membangun programnya sendiri dan mengelola siswa, voucher, harga, profil, serta laporan miliknya.
+        $this->assertEqualsCanonicalizing([
+            'dashboard.lembaga', 'courses.view', 'courses.create', 'courses.update', 'content.manage',
+            'lembaga.students.view', 'lembaga.vouchers.view', 'lembaga.vouchers.create', 'lembaga.vouchers.update', 'lembaga.vouchers.delete',
+            'lembaga.pricing.view', 'lembaga.pricing.update', 'lembaga.profile.view', 'lembaga.profile.update', 'lembaga.report.view',
+        ], Catalog::assignable(Catalog::LEMBAGA));
         // Siswa: fitur belajar yang hanya menyentuh data miliknya sendiri (enrollment aktif).
         $this->assertEqualsCanonicalizing([
             'dashboard.siswa', 'learning.view', 'learning.progress', 'assignments.submit',

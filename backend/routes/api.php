@@ -52,6 +52,9 @@ Route::prefix('v1')->group(function () {
             // Manajemen Lembaga Bimbingan Admin (profil, dashboard, pencairan): lihat routes/api/institutions.php
             require __DIR__.'/api/institutions.php';
 
+            // Lembaga Bimbingan swa-layan (dashboard, siswa, voucher, harga, profil, laporan): lihat routes/api/lembaga.php
+            require __DIR__.'/api/lembaga.php';
+
             // Pengaturan Admin: Role dan Akses (matriks izin): lihat routes/api/settings.php
             require __DIR__.'/api/settings.php';
         });

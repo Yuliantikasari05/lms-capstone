@@ -3,11 +3,14 @@
 namespace Database\Seeders;
 
 use App\Exceptions\InstitutionException;
+use App\Models\ClassSession;
 use App\Models\Coupon;
 use App\Models\Course;
+use App\Models\CourseModule;
 use App\Models\Enrollment;
 use App\Models\Institution;
 use App\Models\InstitutionPayout;
+use App\Models\Material;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\InstitutionPayoutService;
@@ -128,18 +131,60 @@ class DemoInstitutionSeeder extends Seeder
     private function programs(User $account, array $definitions): array
     {
         $courses = [];
-        foreach ($definitions as $i => [$title]) {
+        foreach ($definitions as $i => [$title, $price]) {
             $course = Course::withTrashed()->firstOrNew(['type' => Course::TYPE_INSTITUTION, 'created_by' => $account->id, 'title' => $title]);
-            $course->fill(['description' => "Program {$title} dari lembaga demo.", 'status' => Course::STATUS_ACTIVE]);
+            $course->fill(['description' => "Program {$title} dari lembaga demo.", 'status' => Course::STATUS_ACTIVE, 'category' => 'akademik']);
             $course->type = Course::TYPE_INSTITUTION;
             $course->created_by = $account->id;
             $course->mentor_id = null;
             $course->deleted_at = null;
+
+            // Harga hanya diisi saat program baru dibuat agar perubahan harga oleh lembaga tidak tertimpa saat seeder diulang.
+            if (! $course->exists || (int) $course->price === 0) {
+                $course->price = $price;
+                // Program pertama diberi harga promo contoh (15% lebih murah).
+                $course->discount_price = $i === 0 ? intdiv($price * 85, 100) : null;
+            }
+
             $course->save();
+            $this->curriculum($course, $title);
             $courses[$i] = $course;
         }
 
         return $courses;
+    }
+
+    /** Dua modul + materi tautan + satu sesi pembuka, agar halaman Kelola Modul dan jadwal berisi data. */
+    private function curriculum(Course $course, string $title): void
+    {
+        foreach (["Pengantar {$title}", "Latihan dan Evaluasi {$title}"] as $position => $moduleTitle) {
+            $module = CourseModule::withTrashed()->firstOrNew(['course_id' => $course->id, 'title' => $moduleTitle]);
+            $module->position = $position;
+            $module->deleted_at = null;
+            $module->save();
+
+            $material = Material::withTrashed()->firstOrNew(['course_module_id' => $module->id, 'title' => "Materi {$moduleTitle}"]);
+            $material->fill([
+                'type' => Material::TYPE_LINK,
+                'external_url' => 'https://contoh.test/materi/'.str($moduleTitle)->slug(),
+                'position' => 0,
+                'xp_points' => 0,
+            ]);
+            $material->deleted_at = null;
+            $material->save();
+        }
+
+        $session = ClassSession::withTrashed()->firstOrNew(['course_id' => $course->id, 'title' => "Sesi Pembuka: {$title}"]);
+        $session->fill([
+            'description' => 'Sesi perkenalan program dan tanya jawab bersama pengajar lembaga.',
+            'starts_at' => now()->addDays(7)->setTime(19, 0),
+            'ends_at' => now()->addDays(7)->setTime(20, 30),
+            'mode' => ClassSession::MODE_ONLINE,
+            'meeting_url' => 'https://meet.google.com/hbk-givp-vaz',
+            'status' => ClassSession::STATUS_SCHEDULED,
+        ]);
+        $session->deleted_at = null;
+        $session->save();
     }
 
     /** @param  array<int, array{0:string,1:string,2:string,3:int,4:int|null}>  $vouchers */

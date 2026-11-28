@@ -13,92 +13,27 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
 import { LembagaPageHeader } from './LembagaPageHeader'
+import { fetchReport, fetchVouchers, updatePricing, updateVoucher, type LembagaProgram } from './api'
 
 type ModuleIcon = 'code' | 'security' | 'mobile'
 
-interface ExploreModule {
-  id: number
-  title: string
-  level: string
-  description: string
-  lessons: number
-  rating: string
-  normalPrice: number
-  salePrice: number
-  active: boolean
-  chapters: number
-  enrollments: number
-  revenue: number
-  icon: ModuleIcon
-  expanded: boolean
-  voucher: string
+const ICONS: ModuleIcon[] = ['code', 'security', 'mobile']
+
+const moduleCover: Record<ModuleIcon, { background: string }> = {
+  code: { background: 'bg-[#0b318f]' },
+  security: { background: 'bg-[#176c54]' },
+  mobile: { background: 'bg-[#754700]' },
 }
 
-const INITIAL_MODULES: ExploreModule[] = [
-  {
-    id: 1,
-    title: 'Fullstack Web Developer Professional',
-    level: 'UMUM',
-    description: 'Kuasai front-end dan back-end development dengan stack modern.',
-    lessons: 12,
-    rating: '4.8',
-    normalPrice: 350000,
-    salePrice: 250000,
-    active: true,
-    chapters: 5,
-    enrollments: 6,
-    revenue: 1500000,
-    icon: 'code',
-    expanded: false,
-    voucher: '',
-  },
-  {
-    id: 2,
-    title: 'Cyber Security Fundamentals',
-    level: 'SMA/SMK',
-    description: 'Pelajari dasar-dasar keamanan siber dan analisis ancaman.',
-    lessons: 8,
-    rating: '4.9',
-    normalPrice: 200000,
-    salePrice: 150000,
-    active: true,
-    chapters: 3,
-    enrollments: 5,
-    revenue: 750000,
-    icon: 'security',
-    expanded: false,
-    voucher: '',
-  },
-  {
-    id: 3,
-    title: 'React Native Fundamentals',
-    level: 'UMUM',
-    description: 'Bangun aplikasi mobile cross-platform dengan React Native.',
-    lessons: 15,
-    rating: '4.7',
-    normalPrice: 0,
-    salePrice: 0,
-    active: true,
-    chapters: 8,
-    enrollments: 3,
-    revenue: 500000,
-    icon: 'mobile',
-    expanded: false,
-    voucher: '',
-  },
-]
-
-const VOUCHERS = [
-  { value: '', label: 'Pilih voucher...' },
-  { value: 'WELCOME10', label: 'WELCOME10 — Diskon 10%' },
-  { value: 'BELAJAR25', label: 'BELAJAR25 — Diskon Rp25.000' },
-  { value: 'MITRA15', label: 'MITRA15 — Diskon 15%' },
-]
-
 export default function LembagaJelajahi() {
-  const [modules, setModules] = useState(INITIAL_MODULES)
-  const [editingModuleId, setEditingModuleId] = useState<number | null>(null)
+  const report = useApiData(fetchReport, [])
+  const vouchers = useApiData(fetchVouchers, [])
+  const [expanded, setExpanded] = useState<number[]>([])
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [priceDialogOpen, setPriceDialogOpen] = useState(false)
   const [isFree, setIsFree] = useState(false)
   const [normalPrice, setNormalPrice] = useState('')
@@ -106,59 +41,73 @@ export default function LembagaJelajahi() {
   const [voucher, setVoucher] = useState('')
   const [reportOpen, setReportOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const editingModule = modules.find((module) => module.id === editingModuleId) ?? null
+  const programs = report.data?.programs ?? []
+  const summary = report.data?.summary
+  const editingProgram = programs.find((program) => program.id === editingId) ?? null
 
-  function openPriceDialog(module: ExploreModule) {
-    setEditingModuleId(module.id)
-    setIsFree(module.salePrice === 0)
-    setNormalPrice(module.normalPrice ? String(module.normalPrice) : '')
-    setSalePrice(module.salePrice ? String(module.salePrice) : '')
-    setVoucher(module.voucher)
+  function openPriceDialog(program: LembagaProgram) {
+    const effective = program.discount_price ?? program.price
+    setEditingId(program.id)
+    setIsFree(effective === 0)
+    setNormalPrice(program.price ? String(program.price) : '')
+    setSalePrice(program.discount_price !== null ? String(program.discount_price) : '')
+    setVoucher('')
     setPriceDialogOpen(true)
   }
 
-  function savePrice(event: FormEvent<HTMLFormElement>) {
+  async function savePrice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (editingModuleId === null) return
+    if (editingId === null || busy) return
 
     const regular = isFree ? 0 : Number(normalPrice)
-    const discounted = isFree ? 0 : Number(salePrice)
-    if (!isFree && (!Number.isFinite(regular) || !Number.isFinite(discounted) || regular < 0 || discounted < 0)) {
+    const discounted = isFree ? null : salePrice === '' ? null : Number(salePrice)
+    if (!Number.isFinite(regular) || regular < 0 || (discounted !== null && (!Number.isFinite(discounted) || discounted < 0 || discounted > regular))) {
+      setNotice('Harga tidak valid: pastikan harga diskon tidak melebihi harga normal.')
       return
     }
 
-    setModules((current) =>
-      current.map((module) =>
-        module.id === editingModuleId
-          ? {
-              ...module,
-              normalPrice: regular,
-              salePrice: discounted,
-              voucher,
-            }
-          : module,
-      ),
-    )
-    setPriceDialogOpen(false)
-    setNotice(`Harga "${editingModule?.title ?? 'modul'}" diperbarui pada pratinjau.`)
+    setBusy(true)
+    try {
+      await updatePricing(editingId, regular, discounted)
+      if (voucher) {
+        await updateVoucher(Number(voucher), { course_id: editingId })
+      }
+      setPriceDialogOpen(false)
+      setNotice(`Harga "${editingProgram?.title ?? 'program'}" berhasil diperbarui.`)
+      report.reload()
+      vouchers.reload()
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   function toggleIncome(id: number) {
-    setModules((current) => current.map((module) => (module.id === id ? { ...module, expanded: !module.expanded } : module)))
+    setExpanded((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
   }
 
   return (
     <div className="space-y-6">
       <LembagaPageHeader onReportClick={() => setReportOpen(true)} />
 
+      {report.error && <ErrorState error={report.error} onRetry={report.reload} />}
+
       <section aria-labelledby="explore-modules-title">
         <h1 id="explore-modules-title" className="mb-4 text-2xl font-bold tracking-tight text-slate-900">
           Daftar Modul
         </h1>
+        {report.loading && !report.data && <Spinner label="Memuat program…" />}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {modules.map((module) => (
-            <ExploreModuleCard key={module.id} module={module} onSetPrice={() => openPriceDialog(module)} />
+          {programs.map((program, index) => (
+            <ExploreModuleCard
+              key={program.id}
+              program={program}
+              icon={ICONS[index % ICONS.length]}
+              onSetPrice={() => openPriceDialog(program)}
+            />
           ))}
         </div>
       </section>
@@ -168,67 +117,78 @@ export default function LembagaJelajahi() {
           RINGKASAN LAPORAN &amp; PENDAPATAN
         </h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          <SummaryMetric icon={<LayoutGrid className="h-4 w-4" aria-hidden />} label="Total modul aktif" value="3" />
-          <SummaryMetric icon={<Users className="h-4 w-4" aria-hidden />} label="Total siswa enroll" value="14" />
+          <SummaryMetric icon={<LayoutGrid className="h-4 w-4" aria-hidden />} label="Total modul aktif" value={String(summary?.active_programs ?? 0)} />
+          <SummaryMetric icon={<Users className="h-4 w-4" aria-hidden />} label="Total siswa enroll" value={String(summary?.total_enrollments ?? 0)} />
           <SummaryMetric
             icon={<Wallet className="h-4 w-4" aria-hidden />}
             label="Total pendapatan"
-            value={formatCurrency(2750000)}
+            value={formatCurrency(summary?.total_revenue ?? 0)}
             green
           />
         </div>
 
         <ul className="mt-4 space-y-2.5">
-          {modules.map((module) => (
-            <li key={module.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <button
-                type="button"
-                aria-expanded={module.expanded}
-                onClick={() => toggleIncome(module.id)}
-                className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-slate-50 sm:gap-4 sm:px-4"
-              >
-                <ModuleIconBox icon={module.icon} compact />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold text-slate-900">{module.title}</span>
-                  <span className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">AKTIF</span>
-                    <span>·</span>
-                    <span>{module.chapters} Bab</span>
+          {programs.map((program, index) => {
+            const isOpen = expanded.includes(program.id)
+            const icon = ICONS[index % ICONS.length]
+
+            return (
+              <li key={program.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => toggleIncome(program.id)}
+                  className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-slate-50 sm:gap-4 sm:px-4"
+                >
+                  <ModuleIconBox icon={icon} compact />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-slate-900">{program.title}</span>
+                    <span className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+                        {program.status_label.toUpperCase()}
+                      </span>
+                      <span>·</span>
+                      <span>{program.modules_count} Bab</span>
+                    </span>
                   </span>
-                </span>
-                <span className="hidden text-right sm:block">
-                  <span className="block text-xs font-semibold text-slate-800">{module.enrollments} siswa</span>
-                  <span className="text-[10px] text-slate-500">enroll</span>
-                </span>
-                <span className="text-right">
-                  <span className="block whitespace-nowrap text-xs font-semibold text-emerald-700">
-                    {formatCurrency(module.revenue)}
+                  <span className="hidden text-right sm:block">
+                    <span className="block text-xs font-semibold text-slate-800">{program.students_count} siswa</span>
+                    <span className="text-[10px] text-slate-500">enroll</span>
                   </span>
-                  <span className="text-[10px] text-slate-500">pendapatan</span>
-                </span>
-                <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${module.expanded ? 'rotate-180' : ''}`}
-                  aria-hidden
-                />
-              </button>
-              {module.expanded && (
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                  <span>{module.enrollments} siswa terdaftar pada modul ini</span>
-                  <span className="font-semibold text-emerald-700">
-                    Total pendapatan: {formatCurrency(module.revenue)}
+                  <span className="text-right">
+                    <span className="block whitespace-nowrap text-xs font-semibold text-emerald-700">
+                      {formatCurrency(program.revenue)}
+                    </span>
+                    <span className="text-[10px] text-slate-500">pendapatan</span>
                   </span>
-                </div>
-              )}
-            </li>
-          ))}
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    aria-hidden
+                  />
+                </button>
+                {isOpen && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                    <span>{program.students_count} siswa terdaftar pada modul ini</span>
+                    <span className="font-semibold text-emerald-700">
+                      Total pendapatan: {formatCurrency(program.revenue)}
+                    </span>
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ul>
-        <p className="mt-3 text-xs text-slate-500">Harga, enrollment, dan pendapatan merupakan data contoh untuk pratinjau.</p>
+        {report.data && programs.length === 0 && (
+          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+            Belum ada program untuk dilaporkan. Tambahkan modul terlebih dahulu.
+          </p>
+        )}
       </section>
 
       <Modal
         open={priceDialogOpen}
         title="Atur Harga Modul"
-        description={editingModule?.title}
+        description={editingProgram?.title}
         onClose={() => setPriceDialogOpen(false)}
         size="xl"
         centered
@@ -238,8 +198,8 @@ export default function LembagaJelajahi() {
             <Button variant="secondary" onClick={() => setPriceDialogOpen(false)}>
               Batal
             </Button>
-            <Button type="submit" form="module-price-form">
-              Simpan
+            <Button type="submit" form="module-price-form" disabled={busy}>
+              {busy ? 'Menyimpan…' : 'Simpan'}
             </Button>
           </>
         }
@@ -293,8 +253,7 @@ export default function LembagaJelajahi() {
                   className={inputClass()}
                   value={salePrice}
                   onChange={(event) => setSalePrice(event.target.value)}
-                  placeholder="Masukkan harga"
-                  required
+                  placeholder="Kosongkan bila tanpa diskon"
                 />
               </Field>
             </div>
@@ -307,27 +266,31 @@ export default function LembagaJelajahi() {
               value={voucher}
               onChange={(event) => setVoucher(event.target.value)}
             >
-              {VOUCHERS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
+              <option value="">Tanpa voucher</option>
+              {(vouchers.data?.data ?? []).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.code} — {item.discount_label}
                 </option>
               ))}
             </select>
           </Field>
-          <p className="text-xs leading-5 text-slate-500">Perubahan harga dan voucher hanya tersimpan sementara di pratinjau.</p>
+          <p className="text-xs leading-5 text-slate-500">
+            Harga berlaku untuk transaksi berikutnya; riwayat penjualan tidak berubah. Memilih voucher menautkannya ke program ini.
+          </p>
         </form>
       </Modal>
 
       <Modal
         open={reportOpen}
         title="Ringkasan Laporan & Pendapatan"
-        description="Data laporan belum terhubung ke server."
+        description="Angka diambil dari transaksi dan pendaftaran program lembaga Anda."
         onClose={() => setReportOpen(false)}
       >
         <div className="space-y-3">
-          <p className="text-sm text-slate-600">Total modul aktif: 3</p>
-          <p className="text-sm text-slate-600">Total siswa enroll: 14</p>
-          <p className="text-sm font-semibold text-emerald-700">Total pendapatan: Rp 2.750.000</p>
+          <p className="text-sm text-slate-600">Total modul aktif: {summary?.active_programs ?? 0}</p>
+          <p className="text-sm text-slate-600">Total siswa enroll: {summary?.total_enrollments ?? 0}</p>
+          <p className="text-sm text-slate-600">Voucher aktif: {summary?.active_vouchers ?? 0}</p>
+          <p className="text-sm font-semibold text-emerald-700">Total pendapatan: {formatCurrency(summary?.total_revenue ?? 0)}</p>
         </div>
       </Modal>
 
@@ -346,32 +309,32 @@ export default function LembagaJelajahi() {
   )
 }
 
-function ExploreModuleCard({ module, onSetPrice }: { module: ExploreModule; onSetPrice: () => void }) {
-  const currentPrice = module.salePrice
+function ExploreModuleCard({ program, icon, onSetPrice }: { program: LembagaProgram; icon: ModuleIcon; onSetPrice: () => void }) {
+  const currentPrice = program.discount_price ?? program.price
 
   return (
     <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className={`relative flex h-28 items-center justify-center ${moduleCover[ module.icon ].background}`}>
+      <div className={`relative flex h-28 items-center justify-center ${moduleCover[icon].background}`}>
         <span className="absolute left-3 top-3 rounded bg-black/20 px-2 py-1 text-[10px] font-semibold text-white">
-          {module.level}
+          {program.category ?? 'UMUM'}
         </span>
-        <ModuleIllustration icon={module.icon} />
+        <ModuleIllustration icon={icon} />
       </div>
       <div className="p-4">
-        <h3 className="min-h-12 text-base font-bold leading-6 text-slate-900">{module.title}</h3>
-        <p className="mt-1 min-h-10 text-xs leading-5 text-slate-500">{module.description}</p>
+        <h3 className="min-h-12 text-base font-bold leading-6 text-slate-900">{program.title}</h3>
+        <p className="mt-1 min-h-10 text-xs leading-5 text-slate-500">{program.description ?? 'Program pembelajaran lembaga.'}</p>
         <div className="mt-3 flex items-center gap-4 text-xs text-slate-600">
           <span className="inline-flex items-center gap-1">
-            <LayoutGrid className="h-3.5 w-3.5" aria-hidden /> {module.lessons} Modul
+            <LayoutGrid className="h-3.5 w-3.5" aria-hidden /> {program.modules_count} Modul
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden /> {module.rating}
+          <span className="inline-flex items-center gap-1" title="Rating belum tersedia">
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden /> —
           </span>
         </div>
         <div className="mt-3 flex items-end justify-between gap-2 border-t border-slate-100 pt-3">
           <div className="min-w-0">
-            {module.normalPrice > currentPrice && (
-              <p className="text-[11px] text-slate-400 line-through">{formatCurrency(module.normalPrice)}</p>
+            {program.discount_price !== null && program.discount_price < program.price && (
+              <p className="text-[11px] text-slate-400 line-through">{formatCurrency(program.price)}</p>
             )}
             <p className={`whitespace-nowrap text-lg font-bold ${currentPrice === 0 ? 'text-brand-700' : 'text-emerald-700'}`}>
               {currentPrice === 0 ? 'Gratis' : formatCurrency(currentPrice)}
@@ -389,12 +352,6 @@ function ExploreModuleCard({ module, onSetPrice }: { module: ExploreModule; onSe
       </div>
     </article>
   )
-}
-
-const moduleCover: Record<ModuleIcon, { background: string }> = {
-  code: { background: 'bg-[#0b318f]' },
-  security: { background: 'bg-[#176c54]' },
-  mobile: { background: 'bg-[#754700]' },
 }
 
 function ModuleIllustration({ icon }: { icon: ModuleIcon }) {

@@ -12,21 +12,32 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import { Button } from '../../components/ui/Button'
 import { Field, inputClass } from '../../components/ui/Field'
 import { Modal } from '../../components/ui/Modal'
+import type { CourseModule, Material } from '../../features/courses/types'
+import { toApiError } from '../../lib/api'
+import { createMaterial, deleteMaterial, materialFileUrl, updateMaterial } from './api'
 
 type DocumentType = 'PDF' | 'DOCX' | 'MP4'
 
 interface ResourceDocument {
   id: number
   title: string
-  type: DocumentType
+  /** Label jenis berkas mengikuti ekstensinya (PDF, DOCX, PPTX, MP4, …). */
+  type: string
   date: string
   size: string
-  description?: string
-  externalUrl?: string
+  description: string
+  externalUrl: string
+}
+
+interface ReadingItem {
+  id: number
+  title: string
+  author: string
+  href: string | null
 }
 
 interface ExternalLink {
@@ -35,26 +46,33 @@ interface ExternalLink {
   url: string
 }
 
-const INITIAL_DOCUMENTS: ResourceDocument[] = [
-  { id: 1, title: 'Modul 1: Introduction to Backend PDF', type: 'PDF', date: '12 Okt 2023', size: '2.4 MB' },
-  { id: 2, title: 'Backend Development Guidelines', type: 'DOCX', date: '10 Okt 2023', size: '840 KB' },
-  { id: 3, title: 'Modul 2: API & Database Reference', type: 'PDF', date: '08 Okt 2023', size: '1.8 MB' },
-]
+const DOCUMENT_TYPES: Record<DocumentType, 'pdf' | 'document' | 'video'> = {
+  PDF: 'pdf',
+  DOCX: 'document',
+  MP4: 'video',
+}
 
-const INITIAL_LINKS: ExternalLink[] = [
-  { id: 1, title: 'Official React Documentation', url: 'https://react.dev/learn/describing-the-ui' },
-  { id: 2, title: 'MDN Web Docs', url: 'https://developer.mozilla.org/en-US/docs/Web' },
-]
+const MAX_FILE_BYTES = 50 * 1024 * 1024
 
-export function ResourcesTab() {
-  const [documents, setDocuments] = useState(INITIAL_DOCUMENTS)
-  const [links, setLinks] = useState(INITIAL_LINKS)
+/** Tab ini menampilkan materi dari modul program yang sedang dibuka (GET /courses/{id}/modules). */
+export function ResourcesTab({ modules, onChanged }: { modules: CourseModule[]; onChanged: () => void }) {
+  const materials = useMemo(() => modules.flatMap((module) => module.materials ?? []), [modules])
+  const documents = useMemo(() => materials.filter(isStoredDocument).map(toResourceDocument), [materials])
+  const links = useMemo(() => materials.filter(isExternalLink).map(toExternalLink), [materials])
+  // Reading list = seluruh materi program, lengkap dengan modul asalnya.
+  const readingList = useMemo<ReadingItem[]>(() => modules.flatMap((module) => (module.materials ?? []).map((material) => ({
+    id: material.id,
+    title: material.title,
+    author: module.title,
+    href: material.external_url ?? (material.has_file ? materialFileUrl(material.id) : null),
+  }))), [modules])
+
   const [dialog, setDialog] = useState<'document' | 'link' | null>(null)
-  const [editingDocumentId, setEditingDocumentId] = useState<number | null>(null)
-  const [editingLinkId, setEditingLinkId] = useState<number | null>(null)
+  const [editingDocument, setEditingDocument] = useState<ResourceDocument | null>(null)
+  const [editingLink, setEditingLink] = useState<ExternalLink | null>(null)
+  const [targetModuleId, setTargetModuleId] = useState<number | ''>('')
   const [documentTitle, setDocumentTitle] = useState('')
   const [documentType, setDocumentType] = useState<DocumentType>('PDF')
-  const [documentSize, setDocumentSize] = useState('')
   const [documentDescription, setDocumentDescription] = useState('')
   const [documentExternalUrl, setDocumentExternalUrl] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -62,15 +80,16 @@ export function ResourcesTab() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [linkTitle, setLinkTitle] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<{ type: 'document' | 'link'; id: number; title: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null)
   const [readingListOpen, setReadingListOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
 
   function openCreateDocument() {
-    setEditingDocumentId(null)
+    setEditingDocument(null)
+    setTargetModuleId(modules[0]?.id ?? '')
     setDocumentTitle('')
     setDocumentType('PDF')
-    setDocumentSize('')
     setDocumentDescription('')
     setDocumentExternalUrl('')
     setSelectedFile(null)
@@ -79,12 +98,11 @@ export function ResourcesTab() {
   }
 
   function editDocument(document: ResourceDocument) {
-    setEditingDocumentId(document.id)
+    setEditingDocument(document)
     setDocumentTitle(document.title)
-    setDocumentType(document.type)
-    setDocumentSize(document.size)
-    setDocumentDescription(document.description ?? '')
-    setDocumentExternalUrl(document.externalUrl ?? '')
+    setDocumentType(documentTypeOf(document.type))
+    setDocumentDescription(document.description)
+    setDocumentExternalUrl(document.externalUrl)
     setSelectedFile(null)
     setFileError('')
     setDialog('document')
@@ -100,7 +118,7 @@ export function ResourcesTab() {
       setFileError('Format file tidak didukung. Pilih PDF, DOCX, atau MP4.')
       return
     }
-    if (file.size > 50 * 1024 * 1024) {
+    if (file.size > MAX_FILE_BYTES) {
       setFileError('Ukuran file melebihi batas maksimal 50 MB.')
       return
     }
@@ -109,7 +127,6 @@ export function ResourcesTab() {
     setSelectedFile(file)
     setDocumentType(supportedType)
     setDocumentTitle((current) => current || file.name.replace(/\.[^.]+$/, ''))
-    setDocumentSize(formatResourceFileSize(file.size))
   }
 
   function onResourceFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -122,88 +139,96 @@ export function ResourcesTab() {
     selectFile(event.dataTransfer.files[0])
   }
 
-  function saveDocument(event: FormEvent<HTMLFormElement>) {
+  async function saveDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const title = documentTitle.trim()
-    if (!title) return
+    if (!title || busy || (!editingDocument && targetModuleId === '')) return
 
-    if (editingDocumentId !== null) {
-      setDocuments((current) =>
-        current.map((document) =>
-          document.id === editingDocumentId
-            ? {
-                ...document,
-                title,
-                type: documentType,
-                size: documentSize.trim() || document.size,
-                description: documentDescription.trim(),
-                externalUrl: documentExternalUrl.trim(),
-              }
-            : document,
-        ),
-      )
-      setNotice('Informasi dokumen diperbarui pada pratinjau.')
-    } else {
-      setDocuments((current) => [
-        ...current,
-        {
-          id: Date.now(),
+    setBusy(true)
+    try {
+      if (editingDocument) {
+        await updateMaterial(editingDocument.id, {
           title,
-          type: documentType,
-          date: 'Baru saja',
-          size: selectedFile ? formatResourceFileSize(selectedFile.size) : documentSize.trim() || 'Belum diketahui',
-          description: documentDescription.trim(),
-          externalUrl: documentExternalUrl.trim(),
-        },
-      ])
-      setNotice(
-        selectedFile
-          ? `Resource "${title}" ditambahkan pada pratinjau. File belum dikirim ke server.`
-          : `Resource "${title}" ditambahkan pada pratinjau. Belum ada file fisik yang diunggah.`,
-      )
+          description: documentDescription.trim() || null,
+          file: selectedFile,
+          // Tautan hanya untuk materi video dan hanya bila tidak ada berkas baru.
+          externalUrl:
+            editingDocument.type === 'MP4' && !selectedFile ? documentExternalUrl.trim() : undefined,
+        })
+        setNotice('Resource berhasil diperbarui.')
+      } else {
+        await createMaterial(Number(targetModuleId), {
+          title,
+          type: DOCUMENT_TYPES[documentType],
+          description: documentDescription.trim() || null,
+          file: selectedFile,
+          externalUrl: documentType === 'MP4' && !selectedFile ? documentExternalUrl.trim() || null : null,
+        })
+        setNotice(`Resource "${title}" berhasil disimpan.`)
+      }
+      onChanged()
+      setDialog(null)
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setBusy(false)
     }
-    setDialog(null)
   }
 
   function openCreateLink() {
-    setEditingLinkId(null)
+    setEditingLink(null)
+    setTargetModuleId(modules[0]?.id ?? '')
     setLinkTitle('')
     setLinkUrl('')
     setDialog('link')
   }
 
   function editLink(link: ExternalLink) {
-    setEditingLinkId(link.id)
+    setEditingLink(link)
     setLinkTitle(link.title)
     setLinkUrl(link.url)
     setDialog('link')
   }
 
-  function saveLink(event: FormEvent<HTMLFormElement>) {
+  async function saveLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const title = linkTitle.trim()
     const url = linkUrl.trim()
-    if (!title || !url) return
+    if (!title || !url || busy || (!editingLink && targetModuleId === '')) return
 
-    if (editingLinkId !== null) {
-      setLinks((current) => current.map((link) => (link.id === editingLinkId ? { ...link, title, url } : link)))
-      setNotice('Tautan diperbarui pada pratinjau.')
-    } else {
-      setLinks((current) => [...current, { id: Date.now(), title, url }])
-      setNotice('Tautan ditambahkan pada pratinjau.')
+    setBusy(true)
+    try {
+      if (editingLink) {
+        await updateMaterial(editingLink.id, { title, externalUrl: url })
+        setNotice('Tautan berhasil diperbarui.')
+      } else {
+        await createMaterial(Number(targetModuleId), { title, type: 'link', externalUrl: url })
+        setNotice('Tautan berhasil ditambahkan.')
+      }
+      onChanged()
+      setDialog(null)
+    } catch (error) {
+      setNotice(toApiError(error).message)
+    } finally {
+      setBusy(false)
     }
-    setDialog(null)
   }
 
-  function confirmDelete() {
-    if (!deleteTarget) return
-    if (deleteTarget.type === 'document') {
-      setDocuments((current) => current.filter((document) => document.id !== deleteTarget.id))
-    } else {
-      setLinks((current) => current.filter((link) => link.id !== deleteTarget.id))
+  async function confirmDelete() {
+    if (!deleteTarget || busy) return
+
+    setBusy(true)
+    try {
+      await deleteMaterial(deleteTarget.id)
+      setNotice(`"${deleteTarget.title}" berhasil dihapus.`)
+      setDeleteTarget(null)
+      onChanged()
+    } catch (error) {
+      setNotice(toApiError(error).message)
+      setDeleteTarget(null)
+    } finally {
+      setBusy(false)
     }
-    setNotice(`"${deleteTarget.title}" dihapus dari pratinjau.`)
-    setDeleteTarget(null)
   }
 
   return (
@@ -280,24 +305,28 @@ export function ResourcesTab() {
                   />
                   <ResourceIconAction
                     label={`Hapus ${document.title}`}
-                    onClick={() => setDeleteTarget({ type: 'document', id: document.id, title: document.title })}
+                    onClick={() => setDeleteTarget({ id: document.id, title: document.title })}
                     icon={<Trash2 className="h-4 w-4" aria-hidden />}
                     danger
                   />
-                  <button
-                    type="button"
-                    onClick={() => setNotice(`File contoh "${document.title}" belum tersedia untuk diunduh.`)}
+                  <a
+                    href={materialFileUrl(document.id)}
+                    target="_blank"
+                    rel="noreferrer"
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 text-xs font-semibold text-brand-700 transition hover:bg-blue-100 sm:px-3"
                   >
                     <Download className="h-4 w-4" aria-hidden />
                     Download
-                  </button>
+                  </a>
                 </div>
               </li>
             ))}
+            {documents.length === 0 && (
+              <li className="px-4 py-6 text-center text-sm text-slate-500 sm:px-5">Belum ada dokumen pada modul ini.</li>
+            )}
           </ul>
           <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-xs leading-5 text-slate-500 sm:px-5">
-            Dokumen yang tampil adalah data contoh. File fisik belum tersimpan atau terhubung ke server.
+            Dokumen diambil dari materi modul program ini dan langsung terlihat oleh siswa.
           </p>
         </section>
 
@@ -333,7 +362,7 @@ export function ResourcesTab() {
                       <ResourceIconAction label={`Edit ${link.title}`} onClick={() => editLink(link)} icon={<Pencil className="h-3.5 w-3.5" aria-hidden />} />
                       <ResourceIconAction
                         label={`Hapus ${link.title}`}
-                        onClick={() => setDeleteTarget({ type: 'link', id: link.id, title: link.title })}
+                        onClick={() => setDeleteTarget({ id: link.id, title: link.title })}
                         icon={<Trash2 className="h-3.5 w-3.5" aria-hidden />}
                         danger
                       />
@@ -353,8 +382,12 @@ export function ResourcesTab() {
               <h3 className="font-semibold text-slate-900">Reading List</h3>
             </header>
             <div className="relative space-y-3 p-4">
-              <ReadingBook title="Clean Code: A Handbook of Agile Software Craftsmanship" author="Robert C. Martin" />
-              <ReadingBook title="The Pragmatic Programmer" author="Andrew Hunt & David Thomas" />
+              {readingList.slice(0, 2).map((item) => (
+                <ReadingBook key={item.id} title={item.title} author={item.author} href={item.href} />
+              ))}
+              {readingList.length === 0 && (
+                <p className="text-center text-sm text-slate-500">Belum ada materi untuk dibaca.</p>
+              )}
             </div>
             <button
               type="button"
@@ -369,7 +402,7 @@ export function ResourcesTab() {
 
       <Modal
         open={dialog === 'document'}
-        title={editingDocumentId === null ? 'Tambah Resource Baru' : 'Edit Resource'}
+        title={editingDocument === null ? 'Tambah Resource Baru' : 'Edit Resource'}
         onClose={() => setDialog(null)}
         size="xl"
         centered
@@ -378,7 +411,12 @@ export function ResourcesTab() {
             <Button variant="secondary" onClick={() => setDialog(null)}>
               Batal
             </Button>
-            <Button type="submit" form="document-form" icon={<Check className="h-4 w-4" aria-hidden />}>
+            <Button
+              type="submit"
+              form="document-form"
+              disabled={busy}
+              icon={<Check className="h-4 w-4" aria-hidden />}
+            >
               Simpan Resource
             </Button>
           </>
@@ -397,12 +435,30 @@ export function ResourcesTab() {
               data-autofocus
             />
           </Field>
+          {editingDocument === null && (
+            <Field id="resource-module" label="Modul">
+              <select
+                id="resource-module"
+                className={inputClass()}
+                value={targetModuleId}
+                onChange={(event) => setTargetModuleId(Number(event.target.value))}
+                required
+              >
+                {modules.map((module) => (
+                  <option key={module.id} value={module.id}>
+                    {module.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field id="resource-type" label="Tipe Resource">
             <select
               id="resource-type"
               className={inputClass()}
               value={documentType}
               onChange={(event) => setDocumentType(event.target.value as DocumentType)}
+              disabled={editingDocument !== null}
             >
                 <option value="PDF">File PDF</option>
                 <option value="DOCX">File DOCX</option>
@@ -445,7 +501,10 @@ export function ResourcesTab() {
             >
               <CloudUpload className="mx-auto h-8 w-8 text-brand-600" aria-hidden />
               <p className="mt-2 text-sm font-semibold text-slate-800">
-                {selectedFile?.name ?? 'Pilih file atau tarik ke sini'}
+                {selectedFile?.name ??
+                  (editingDocument
+                    ? 'Pilih file baru untuk mengganti'
+                    : 'Pilih file atau tarik ke sini')}
               </p>
               <p className="mt-1 text-xs text-slate-500">PDF, DOCX, atau MP4 (Maks. 50MB)</p>
               {selectedFile && (
@@ -468,23 +527,31 @@ export function ResourcesTab() {
                 value={documentExternalUrl}
                 onChange={(event) => setDocumentExternalUrl(event.target.value)}
                 placeholder="https://example.com/resource"
+                disabled={documentType !== 'MP4'}
               />
             </div>
           </Field>
           <p className="text-xs leading-5 text-slate-500">
-            Data dan pilihan file hanya disimpan sementara di pratinjau ini, belum diunggah ke server.
+            File dan tautan langsung dikirim ke server dan menjadi materi modul yang dipilih.
           </p>
         </form>
       </Modal>
 
       <Modal
         open={dialog === 'link'}
-        title={editingLinkId === null ? 'Tambah External Link' : 'Edit External Link'}
+        title={editingLink === null ? 'Tambah External Link' : 'Edit External Link'}
         onClose={() => setDialog(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDialog(null)}>Batal</Button>
-            <Button type="submit" form="link-form" icon={<Check className="h-4 w-4" aria-hidden />}>Simpan Link</Button>
+            <Button
+              type="submit"
+              form="link-form"
+              disabled={busy}
+              icon={<Check className="h-4 w-4" aria-hidden />}
+            >
+              Simpan Link
+            </Button>
           </>
         }
       >
@@ -492,26 +559,50 @@ export function ResourcesTab() {
           <Field id="link-title" label="Nama tautan">
             <input id="link-title" className={inputClass()} value={linkTitle} onChange={(event) => setLinkTitle(event.target.value)} required maxLength={100} data-autofocus />
           </Field>
+          {editingLink === null && (
+            <Field id="link-module" label="Modul">
+              <select
+                id="link-module"
+                className={inputClass()}
+                value={targetModuleId}
+                onChange={(event) => setTargetModuleId(Number(event.target.value))}
+                required
+              >
+                {modules.map((module) => (
+                  <option key={module.id} value={module.id}>
+                    {module.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field id="link-url" label="URL">
             <input id="link-url" type="url" className={inputClass()} value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://example.com" required />
           </Field>
-          <p className="text-xs text-slate-500">Tautan hanya ditampilkan pada pratinjau lokal.</p>
+          <p className="text-xs text-slate-500">Tautan menjadi materi modul dan dapat dibuka siswa.</p>
         </form>
       </Modal>
 
       <Modal
         open={deleteTarget !== null}
         title="Hapus resource?"
-        description={`"${deleteTarget?.title ?? ''}" akan dihapus dari daftar pratinjau.`}
+        description={`"${deleteTarget?.title ?? ''}" akan dihapus dari materi modul.`}
         onClose={() => setDeleteTarget(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Batal</Button>
-            <Button variant="danger" onClick={confirmDelete} icon={<Trash2 className="h-4 w-4" aria-hidden />}>Hapus</Button>
+            <Button
+              variant="danger"
+              onClick={confirmDelete}
+              disabled={busy}
+              icon={<Trash2 className="h-4 w-4" aria-hidden />}
+            >
+              Hapus
+            </Button>
           </>
         }
       >
-        <p className="text-sm text-slate-600">Perubahan hanya berlaku sementara di halaman ini.</p>
+        <p className="text-sm text-slate-600">Siswa tidak akan melihat materi ini lagi.</p>
       </Modal>
 
       <Modal
@@ -521,16 +612,48 @@ export function ResourcesTab() {
         onClose={() => setReadingListOpen(false)}
       >
         <div className="space-y-3">
-          <ReadingBook title="Clean Code: A Handbook of Agile Software Craftsmanship" author="Robert C. Martin" />
-          <ReadingBook title="The Pragmatic Programmer" author="Andrew Hunt & David Thomas" />
-          <ReadingBook title="You Don't Know JS Yet" author="Kyle Simpson" />
+          {readingList.map((item) => (
+            <ReadingBook key={item.id} title={item.title} author={item.author} href={item.href} />
+          ))}
+          {readingList.length === 0 && (
+            <p className="text-center text-sm text-slate-500">Belum ada materi untuk dibaca.</p>
+          )}
         </div>
       </Modal>
     </div>
   )
 }
 
-function FileTypeIcon({ type }: { type: DocumentType }) {
+/** Materi bertipe link atau video tanpa berkas ditampilkan pada daftar tautan eksternal. */
+function isExternalLink(material: Material): boolean {
+  return material.type === 'link' || (!material.has_file && material.external_url !== null)
+}
+
+function isStoredDocument(material: Material): boolean {
+  return !isExternalLink(material)
+}
+
+function toResourceDocument(material: Material): ResourceDocument {
+  return {
+    id: material.id,
+    title: material.title,
+    type: documentLabel(material),
+    date: formatResourceDate(material.created_at),
+    size: material.file?.size ? formatResourceFileSize(material.file.size) : '—',
+    description: material.description ?? '',
+    externalUrl: material.external_url ?? '',
+  }
+}
+
+function toExternalLink(material: Material): ExternalLink {
+  return {
+    id: material.id,
+    title: material.title,
+    url: material.external_url ?? materialFileUrl(material.id),
+  }
+}
+
+function FileTypeIcon({ type }: { type: string }) {
   const isPdf = type === 'PDF'
   return (
     <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${isPdf ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>
@@ -540,12 +663,20 @@ function FileTypeIcon({ type }: { type: DocumentType }) {
   )
 }
 
-function ReadingBook({ title, author }: { title: string; author: string }) {
-  return (
-    <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+function ReadingBook({ title, author, href }: { title: string; author: string; href: string | null }) {
+  const body = (
+    <>
       <h4 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-800">{title}</h4>
       <p className="mt-1 text-xs text-slate-500">{author}</p>
-    </article>
+    </>
+  )
+
+  return href ? (
+    <a href={href} target="_blank" rel="noreferrer" className="block rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-brand-300">
+      {body}
+    </a>
+  ) : (
+    <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">{body}</article>
   )
 }
 
@@ -582,6 +713,25 @@ function displayUrl(value: string): string {
   } catch {
     return value
   }
+}
+
+function documentTypeOf(label: string): DocumentType {
+  return label === 'PDF' ? 'PDF' : label === 'MP4' || label === 'WEBM' ? 'MP4' : 'DOCX'
+}
+
+/** Jenis berkas ditampilkan dari ekstensi nama file; tipe materi saja tidak cukup spesifik. */
+function documentLabel(material: Material): string {
+  const extension = material.file?.name?.split('.').pop()?.toUpperCase()
+
+  if (extension) return extension
+
+  return material.type === 'pdf' ? 'PDF' : material.type === 'video' ? 'MP4' : 'DOCX'
+}
+
+function formatResourceDate(iso: string | null | undefined): string {
+  if (!iso) return 'Baru saja'
+
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
 }
 
 function formatResourceFileSize(size: number): string {

@@ -13,42 +13,46 @@ import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode }
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/ui/Button'
-import { ROLE_CONFIG } from '../../config/navigation'
+import { ErrorState, Spinner } from '../../components/ui/States'
+import { toApiError } from '../../lib/api'
+import { useApiData } from '../../lib/useApiData'
 import { LembagaPageHeader } from './LembagaPageHeader'
+import { fetchProfile, updateProfile, type LembagaProfile } from './api'
 
 type SettingsTab = 'profile' | 'details'
 
-interface InstructorProfileData {
+interface InstitutionProfileData {
   name: string
   role: string
   totalStudents: number
   totalClasses: number
-  rating: number
+  rating: number | null
   completedClasses: number
-  teachingHours: number
+  teachingHours: number | null
   certificatesReleased: number
 }
 
 export default function LembagaPengaturan() {
   const { user } = useAuth()
+  const profile = useApiData(fetchProfile, [])
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [notice, setNotice] = useState('')
-  const instructor: InstructorProfileData = {
-    name: user?.name ?? 'Mitra Lembaga',
-    role: user?.primary_role ? ROLE_CONFIG[user.primary_role].label : 'Instructor',
-    totalStudents: 11,
-    totalClasses: 4,
-    rating: 4.9,
-    completedClasses: 4,
-    teachingHours: 1.5,
-    certificatesReleased: 2,
+  const institution: InstitutionProfileData = {
+    name: profile.data?.name ?? user?.name ?? 'Mitra Lembaga',
+    role: 'Lembaga Bimbingan',
+    totalStudents: profile.data?.stats.total_students ?? 0,
+    totalClasses: profile.data?.stats.total_programs ?? 0,
+    rating: profile.data?.stats.rating ?? null,
+    completedClasses: 0,
+    teachingHours: null,
+    certificatesReleased: 0,
   }
 
   return (
     <div className="space-y-6">
-      <LembagaPageHeader onReportClick={() => setNotice('Laporan instruktur belum tersedia di pratinjau.')} />
+      <LembagaPageHeader onReportClick={() => setNotice('Laporan pendapatan dan enrollment tersedia di halaman Jelajahi.')} />
 
-      <nav aria-label="Pengaturan instruktur" className="border-b border-slate-200">
+      <nav aria-label="Pengaturan lembaga" className="border-b border-slate-200">
         <div className="flex gap-2">
           <SettingsTabButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')}>
             Profil Instruktur
@@ -66,23 +70,31 @@ export default function LembagaPengaturan() {
         </div>
       )}
 
-      {activeTab === 'profile'
-        ? <InstructorProfile user={instructor} />
-        : <EditInstructorProfile
-            onSaved={() => setNotice('Perubahan profil disimpan sementara di pratinjau.')}
-            onBack={() => setActiveTab('profile')}
-          />}
+      {profile.error && <ErrorState error={profile.error} onRetry={profile.reload} />}
+      {profile.loading && !profile.data && <Spinner label="Memuat profil…" />}
 
-      <p className="text-xs text-slate-500">Statistik dan perubahan profil merupakan contoh pratinjau frontend, belum terhubung ke backend.</p>
+      {profile.data && (
+        activeTab === 'profile'
+          ? <InstructorProfile user={institution} profile={profile.data} />
+          : <EditInstructorProfile
+              profile={profile.data}
+              onSaved={(message) => {
+                setNotice(message)
+                profile.reload()
+                setActiveTab('profile')
+              }}
+              onBack={() => setActiveTab('profile')}
+            />
+      )}
     </div>
   )
 }
 
-function InstructorProfile({ user }: { user: InstructorProfileData }) {
+function InstructorProfile({ user, profile }: { user: InstitutionProfileData; profile: LembagaProfile }) {
   const instructorStats = [
     { value: user.completedClasses, label: 'Kelas Selesai', color: 'text-blue-700' },
-    { value: user.rating, label: 'Rating', color: 'text-emerald-700' },
-    { value: user.teachingHours, label: 'Jam Mengajar', color: 'text-amber-700' },
+    { value: user.rating ?? '—', label: 'Rating', color: 'text-emerald-700' },
+    { value: user.teachingHours ?? '—', label: 'Jam Mengajar', color: 'text-amber-700' },
     { value: user.certificatesReleased, label: 'Sertifikat Dirilis', color: 'text-blue-700' },
   ]
 
@@ -99,7 +111,7 @@ function InstructorProfile({ user }: { user: InstructorProfileData }) {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
                   <GraduationCap className="h-4 w-4" aria-hidden />
-                  INSTRUCTOR
+                  LEMBAGA
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-800">
                   <Check className="h-4 w-4" aria-hidden />
@@ -108,6 +120,7 @@ function InstructorProfile({ user }: { user: InstructorProfileData }) {
               </div>
             </div>
             <p className="mt-1 text-sm text-slate-600">{user.role}</p>
+            <p className="mt-1 text-xs text-slate-500">{profile.account.email}</p>
             <span className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
               <LockKeyhole className="h-3.5 w-3.5" aria-hidden />
               Keamanan
@@ -118,7 +131,7 @@ function InstructorProfile({ user }: { user: InstructorProfileData }) {
         <div className="grid gap-3 sm:grid-cols-3">
           <PrimaryMetric icon={<Users className="h-5 w-5" aria-hidden />} label="Total Siswa" value={String(user.totalStudents)} tone="blue" />
           <PrimaryMetric icon={<BookOpen className="h-5 w-5" aria-hidden />} label="Total Kelas" value={String(user.totalClasses)} tone="green" />
-          <PrimaryMetric icon={<Star className="h-5 w-5" aria-hidden />} label="Rating Rata-rata" value={`${user.rating}/5`} tone="amber" />
+          <PrimaryMetric icon={<Star className="h-5 w-5" aria-hidden />} label="Rating Rata-rata" value={user.rating === null ? '—' : `${user.rating}/5`} tone="amber" />
         </div>
 
         <div className="border-t border-slate-100 pt-5">
@@ -131,21 +144,36 @@ function InstructorProfile({ user }: { user: InstructorProfileData }) {
               </article>
             ))}
           </div>
+          <p className="mt-4 text-xs text-slate-500">
+            Rating dan jam mengajar belum dicatat pada program lembaga; angka tidak dikarang.
+          </p>
         </div>
       </div>
     </section>
   )
 }
 
-function EditInstructorProfile({ onSaved, onBack }: { onSaved: () => void; onBack: () => void }) {
-  const { user } = useAuth()
+function EditInstructorProfile({
+  profile,
+  onSaved,
+  onBack,
+}: {
+  profile: LembagaProfile
+  onSaved: (message: string) => void
+  onBack: () => void
+}) {
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
-    fullName: user?.name ?? '',
-    email: user?.email ?? '',
-    bio: 'Mahasiswa Teknik Informatika angkatan 2021. Fokus pada pengembangan web dan kecerdasan buatan.',
+    fullName: profile.name,
+    email: profile.account.email,
+    bio: profile.description ?? '',
   })
   const [photo, setPhoto] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setFormData({ fullName: profile.name, email: profile.account.email, bio: profile.description ?? '' })
+  }, [profile])
 
   useEffect(() => {
     if (!photo) return
@@ -162,9 +190,19 @@ function EditInstructorProfile({ onSaved, onBack }: { onSaved: () => void; onBac
     setPhoto(URL.createObjectURL(file))
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    onSaved()
+    if (busy) return
+
+    setBusy(true)
+    try {
+      await updateProfile({ name: formData.fullName.trim(), description: formData.bio.trim() || null })
+      onSaved('Profil lembaga berhasil diperbarui.')
+    } catch (error) {
+      onSaved(toApiError(error).message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   function updateField(field: keyof typeof formData, value: string) {
@@ -208,7 +246,7 @@ function EditInstructorProfile({ onSaved, onBack }: { onSaved: () => void; onBac
                 type="text"
                 value={formData.fullName}
                 onChange={(event) => updateField('fullName', event.target.value)}
-                maxLength={100}
+                maxLength={150}
                 required
                 className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
@@ -230,13 +268,15 @@ function EditInstructorProfile({ onSaved, onBack }: { onSaved: () => void; onBac
               value={formData.bio}
               onChange={(event) => updateField('bio', event.target.value)}
               rows={4}
-              maxLength={500}
+              maxLength={1000}
               className="mt-1.5 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
           </label>
 
           <div className="flex justify-end">
-            <Button type="submit" icon={<Save className="h-4 w-4" aria-hidden />}>Simpan Perubahan</Button>
+            <Button type="submit" disabled={busy} icon={<Save className="h-4 w-4" aria-hidden />}>
+              {busy ? 'Menyimpan…' : 'Simpan Perubahan'}
+            </Button>
           </div>
         </div>
       </form>

@@ -46,6 +46,7 @@ export interface Material {
   duration_minutes: number | null
   xp_points: number
   position: number
+  created_at?: string | null
 }
 
 export interface CourseModule {

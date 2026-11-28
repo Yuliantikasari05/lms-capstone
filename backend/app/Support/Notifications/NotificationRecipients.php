@@ -3,6 +3,7 @@
 namespace App\Support\Notifications;
 
 use App\Models\Course;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -48,5 +49,28 @@ final class NotificationRecipients
         }
 
         return $mentor;
+    }
+
+    /**
+     * Pemilik Program Lembaga (akun Lembaga pembuat program) bila masih aktif dan berhak.
+     * Dipakai mis. saat peserta baru didaftarkan ke program miliknya.
+     */
+    public static function institutionOwner(Course $course, string $permission, ?User $except = null): ?User
+    {
+        if (! $course->isInstitutionProgram()) {
+            return null;
+        }
+
+        $owner = $course->creator;
+
+        if ($owner === null
+            || ! $owner->isActive()
+            || ! $owner->hasRole(Role::LEMBAGA)
+            || ($except !== null && $owner->is($except))
+            || ! $owner->hasPermission($permission)) {
+            return null;
+        }
+
+        return $owner;
     }
 }

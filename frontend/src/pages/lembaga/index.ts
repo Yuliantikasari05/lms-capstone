@@ -11,6 +11,7 @@ import TambahModul from './TambahModul'
 import DetailModulSessions from './DetailModulSessions'
 import DiscussionDetail from './DiscussionDetail'
 import DetailSiswa from './DetailSiswa'
+import LembagaNotifikasi from './Notifikasi'
 
 /** Halaman untuk setiap menu Lembaga Bimbingan. Kunci = `key` menu di config/navigation.ts. */
 export const lembagaPages: Record<string, ComponentType> = {
@@ -24,6 +25,8 @@ export const lembagaPages: Record<string, ComponentType> = {
 }
 
 export const lembagaRoutes: ExtraRoute[] = [
+  // Halaman notifikasi dibuka dari lonceng header, bukan menu sidebar (tampilan menu tidak berubah).
+  { path: 'notifications', Page: LembagaNotifikasi },
   { path: 'modules/new', Page: TambahModul },
   { path: 'modules/:moduleId/sessions', Page: DetailModulSessions },
   { path: 'modules/:moduleId/discussions/:discussionId', Page: DiscussionDetail },

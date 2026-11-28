@@ -7,7 +7,8 @@ use Illuminate\Notifications\Notification;
 /**
  * Notifikasi dalam aplikasi (channel database). Dipakai untuk memberi tahu tiap peran tentang
  * pekerjaannya: peserta (nilai, jadwal, pencapaian), Mentor (pengumpulan, peserta, keputusan Admin),
- * dan Admin (ujian menunggu review, kursus baru dari Mentor).
+ * dan Admin (ujian menunggu review, kursus baru dari Mentor), serta penulis topik diskusi yang
+ * mendapat balasan baru.
  *
  * Bentuk data mengikuti kontrak frontend (lib/notifications.ts): kategori, judul, pesan,
  * pengirim, label aksi, dan tautan tujuan di aplikasi.
@@ -20,6 +21,7 @@ class LearningNotification extends Notification
     public const CATEGORY_SYSTEM = 'system';
     public const CATEGORY_SUBMISSION = 'submission';
     public const CATEGORY_ROSTER = 'roster';
+    public const CATEGORY_DISCUSSION = 'discussion';
 
     public function __construct(
         public string $category,

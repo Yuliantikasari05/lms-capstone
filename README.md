@@ -101,6 +101,12 @@ php artisan lms:reset-role-permissions --role=all --force   # hanya bila izin ba
 
 `RolePermissionSeeder` aman dijalankan berulang: izin baru dibuat dan diberikan ke role bawaan, sedangkan izin yang sengaja dimatikan Admin lewat **Pengaturan > Role & Akses** tidak dinyalakan lagi. Setelah sinkron, pengguna cukup me-refresh halaman karena izin dibaca ulang dari database pada setiap request.
 
+Bila role Lembaga sudah ada sebelum fitur pengelolaan mandiri ditambahkan, izin barunya (`lembaga.*`) dibuat otomatis oleh seeder, tetapi izin lama yang kini ikut diberikan (`courses.view`, `courses.create`, `courses.update`, `content.manage`) perlu diselaraskan sekali:
+
+```bash
+php artisan lms:reset-role-permissions --role=lembaga --force
+```
+
 ### 7b. Data demo kursus, tugas, dan jadwal (opsional, hanya development)
 
 Halaman Mentor (Kursus Saya, Manajemen Kurikulum, Dashboard, Tugas, Jadwal Bimbingan) membaca data dari database. Untuk mengisi contoh yang saling cocok:
@@ -112,7 +118,8 @@ php artisan db:seed --class=DemoCourseSeeder
 php artisan db:seed --class=DemoAssignmentSeeder
 php artisan db:seed --class=DemoLearningSeeder   # data belajar Siswa (opsional)
 php artisan db:seed --class=DemoGamificationSeeder # level & XP contoh (opsional)
-php artisan db:seed --class=DemoNotificationSeeder # notifikasi contoh Siswa, Mentor, dan Admin (opsional)
+php artisan db:seed --class=DemoInstitutionSeeder  # lembaga, program, penjualan, voucher, pencairan (opsional)
+php artisan db:seed --class=DemoNotificationSeeder # notifikasi contoh Siswa, Mentor, Admin, dan Lembaga (opsional)
 ```
 
 - `DemoUserSeeder` membuat akun `@demo.test` (Mentor, Siswa, Karyawan, Lembaga). Kata sandinya dari `DEMO_USER_PASSWORD` di `.env`.
@@ -121,7 +128,8 @@ php artisan db:seed --class=DemoNotificationSeeder # notifikasi contoh Siswa, Me
 - `DemoAssignmentSeeder` membuat tugas, kuis, dan satu ujian (berstatus **Menunggu persetujuan** Admin) beserta soal dan pengumpulan contoh, sehingga halaman **Tugas** dan tab **Tugas siswa/karyawan** langsung berisi data.
 - `DemoLearningSeeder` melengkapi akun `adi.saputra@demo.test` (enrollment aktif, materi selesai, log belajar 6 bulan, hari aktif, kehadiran sesi lampau) sehingga Dashboard, Materi, Tugas, Jadwal, Papan Peringkat, dan Laporan siswa berisi data nyata. Rincian endpoint: `docs/api-belajar-siswa.md`.
 - `DemoGamificationSeeder` membuat level contoh hanya bila tabel `levels` masih kosong, lalu memberi XP contoh ke Siswa demo agar papan peringkat tidak kosong.
-- `DemoNotificationSeeder` mengisi lonceng dan halaman **Notifikasi** tiap peran dengan isi sesuai pekerjaannya: Siswa (`adi.saputra@demo.test`), Mentor (`rina.kusumawati@demo.test`), dan setiap akun Admin. Notifikasi juga dibuat otomatis dari aktivitas nyata: pengumpulan tugas (Mentor), keputusan review ujian dan peserta baru (Admin), nilai tugas dan sesi baru (Siswa). Penerimanya ditentukan izin role dan kepemilikan kursus.
+- `DemoInstitutionSeeder` mengisi 3 lembaga demo (`bimbel.cerdas@demo.test`, `prima.edukasi@demo.test`, `bimbel.nusantara@demo.test`) beserta program, modul, materi, sesi, siswa, voucher, transaksi, dan pencairan. Harga program sudah diisi sehingga halaman **Jelajahi**, **Kelola Modul**, **Kelola Siswa**, dan **Voucher** role Lembaga langsung berisi data.
+- `DemoNotificationSeeder` mengisi lonceng dan halaman **Notifikasi** tiap peran dengan isi sesuai pekerjaannya: Siswa (`adi.saputra@demo.test`), Mentor (`rina.kusumawati@demo.test`), Lembaga (`prima.edukasi@demo.test`), dan setiap akun Admin. Notifikasi juga dibuat otomatis dari aktivitas nyata: pengumpulan tugas (Mentor), keputusan review ujian dan peserta baru (Admin), program baru dari Lembaga (Admin), peserta program lembaga (Lembaga), nilai tugas dan sesi baru (Siswa). Penerimanya ditentukan izin role dan kepemilikan kursus.
 - Keduanya hanya berjalan di lingkungan `local`/`testing` dan **tidak** dipanggil oleh `db:seed` biasa.
 - Materi demo memakai tautan (tanpa file) dan bertipe `video` bila punya durasi, `link` bila tidak, sesuai aturan API.
 - Hapus data demo kursus lewat `php artisan tinker`: `Course::withTrashed()->whereIn('title', DemoCourseSeeder::titles())->forceDelete();`
@@ -214,6 +222,8 @@ Akun Karyawan, Mentor, Siswa, dan Lembaga Bimbingan dibuat oleh Admin (melalui `
 - Frontend: login/logout/cek sesi lewat API, penanganan 401/403/419 dan backend tidak dapat dihubungi, layout sidebar (Admin) dan top-nav (4 role lain), dashboard, halaman Profil, daftar pengguna (Admin, hanya baca).
 - Dashboard Admin menampilkan data nyata dari database (jumlah pengguna, mentor, login terbaru).
 - Halaman **Kursus Saya** Mentor (`/mentor/courses`) dan detail kursus (`/mentor/courses/:id`) memakai data nyata: `GET /api/v1/courses`, `GET /api/v1/courses/{id}`, dan `GET /api/v1/courses/{id}/modules` (kurikulum + materi, termasuk tautan/berkas materi). Tampilan tidak diubah; data contoh lama hanya dipakai halaman yang belum terhubung (mis. Manajemen Kurikulum Mentor).
+- Role **Lembaga Bimbingan** sudah tersambung ke API: dashboard (`/lembaga/summary`), program dan kurikulum (`/courses`, `/courses/{id}/modules`, materi, sesi), Jelajahi + harga (`/lembaga/reports`, `/lembaga/programs/{id}/pricing`), siswa (`/lembaga/students`), voucher (`/lembaga/vouchers`), profil (`/lembaga/profile`), dan notifikasi. Semua data dibatasi kepemilikan lembaga yang login. Kontrak: `docs/api-lembaga-swa-layanan.md`.
+- Halaman **Role & Akses** Admin menampilkan fitur Lembaga sebagai sakelar aktif: Program Lembaga Saya, Modul dan Materi, Sesi dan Live, Kelola Siswa, Voucher, Atur Harga, Profil, dan Laporan. Mematikan sakelar langsung menutup endpoint-nya (403).
 - Automated test backend (health, login berhasil/gagal, logout, profil dengan/tanpa autentikasi, role/permission, pembatasan akses).
 
 **Masih placeholder ("Fitur belum tersedia pada tahap ini")**
